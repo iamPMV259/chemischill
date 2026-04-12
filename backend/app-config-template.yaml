@@ -1,0 +1,23 @@
+app:
+  title: "ChemisChill API"
+  version: "1.0.0"
+  environment: "${ENVIRONMENT}"
+  frontend_url: "${FRONTEND_URL}"
+  port: 8000
+
+authentication:
+  jwt_secret: "${JWT_SECRET}"
+  jwt_refresh_secret: "${JWT_REFRESH_SECRET}"
+  access_token_expire_minutes: 15
+  refresh_token_expire_days: 7
+
+database:
+  url: "${DATABASE_URL}"
+
+storage:
+  cloudinary_cloud_name: "${CLOUDINARY_CLOUD_NAME}"
+  cloudinary_api_key: "${CLOUDINARY_API_KEY}"
+  cloudinary_api_secret: "${CLOUDINARY_API_SECRET}"
+  supabase_url: "${SUPABASE_URL}"
+  supabase_service_key: "${SUPABASE_SERVICE_KEY}"
+  supabase_storage_bucket: "${SUPABASE_STORAGE_BUCKET}"
