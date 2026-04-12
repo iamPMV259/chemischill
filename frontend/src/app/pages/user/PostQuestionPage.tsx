@@ -1,0 +1,202 @@
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router';
+import { ArrowLeft, Upload, X, AlertCircle } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
+import { Badge } from '../../components/ui/badge';
+import { motion } from 'motion/react';
+import { tags } from '../../data/mockData';
+import { toast } from 'sonner';
+
+export default function PostQuestionPage() {
+  const navigate = useNavigate();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [images, setImages] = useState<string[]>([]);
+
+  const toggleTag = (tagName: string) => {
+    if (selectedTags.includes(tagName)) {
+      setSelectedTags(selectedTags.filter((t) => t !== tagName));
+    } else if (selectedTags.length < 5) {
+      setSelectedTags([...selectedTags, tagName]);
+    }
+  };
+
+  const handleImageUpload = () => {
+    // Simulate image upload
+    setImages([...images, 'https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?w=600&h=400&fit=crop']);
+  };
+
+  const removeImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title || !description || selectedTags.length === 0) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    toast.success('Question submitted for review!');
+    setTimeout(() => navigate('/community'), 1000);
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-6 py-12">
+      <Link to="/community" className="inline-flex items-center gap-2 text-gray-600 mb-8 hover:text-gray-900">
+        <ArrowLeft className="w-4 h-4" />
+        Quay Lại Cộng Đồng
+      </Link>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold mb-3">Đặt Câu Hỏi</h1>
+          <p className="text-gray-600">Nhận trợ giúp từ cộng đồng hóa học</p>
+        </div>
+
+        {/* Notice */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-8 flex gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-900">
+            <p className="font-semibold mb-1">Your question will be reviewed before publishing</p>
+            <p>An admin will review your question to ensure it meets our community guidelines. This usually takes less than 24 hours.</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-8 space-y-6">
+          {/* Title */}
+          <div>
+            <Label htmlFor="title">Question Title *</Label>
+            <Input
+              id="title"
+              placeholder="e.g., How do I balance this redox equation?"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="mt-2"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">Be specific and clear about your question</p>
+          </div>
+
+          {/* Description */}
+          <div>
+            <Label htmlFor="description">Detailed Description *</Label>
+            <Textarea
+              id="description"
+              placeholder="Provide all the details about your chemistry problem. Include what you've tried and where you're stuck..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={8}
+              className="mt-2"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              The more details you provide, the better answers you'll receive
+            </p>
+          </div>
+
+          {/* Image Upload */}
+          <div>
+            <Label>Attach Images (Optional)</Label>
+            <div className="mt-2">
+              {images.length > 0 && (
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  {images.map((img, index) => (
+                    <div key={index} className="relative group">
+                      <img
+                        src={img}
+                        alt={`Upload ${index + 1}`}
+                        className="w-full h-32 object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(index)}
+                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleImageUpload}
+                disabled={images.length >= 3}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload Image {images.length > 0 && `(${images.length}/3)`}
+              </Button>
+              <p className="text-xs text-gray-500 mt-1">
+                Upload images of your problem, handwritten work, or diagrams (max 3 images)
+              </p>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <Label>Select Topics * (Max 5)</Label>
+            <div className="mt-2 p-4 border border-gray-200 rounded-lg">
+              <div className="flex flex-wrap gap-2 mb-4">
+                {selectedTags.map((tag) => (
+                  <Badge key={tag} className="px-3 py-1">
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => toggleTag(tag)}
+                      className="ml-2 hover:text-red-200"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
+                {selectedTags.length === 0 && (
+                  <p className="text-sm text-gray-500">No topics selected</p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    variant={selectedTags.includes(tag.name) ? 'default' : 'secondary'}
+                    className="cursor-pointer"
+                    onClick={() => toggleTag(tag.name)}
+                  >
+                    {tag.name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Select up to 5 topics that best describe your question
+            </p>
+          </div>
+
+          {/* Submit */}
+          <div className="flex gap-3 pt-4">
+            <Link to="/community" className="flex-1">
+              <Button type="button" variant="outline" className="w-full">
+                Cancel
+              </Button>
+            </Link>
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={!title || !description || selectedTags.length === 0}
+            >
+              Submit Question
+            </Button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
