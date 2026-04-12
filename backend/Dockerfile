@@ -1,12 +1,52 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
 
+# Base image
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-bookworm AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e "."
+# Create a non-privileged user that the app will run under.
+# See https://docs.docker.com/go/dockerfile-user-best-practices/
+ARG UID=10001
+RUN adduser \
+  --disabled-password \
+  --gecos "" \
+  --home "/home/appuser" \
+  --shell "/bin/bash" \
+  --uid "${UID}" \
+  appuser
 
-COPY . .
+# Install uv.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Install the application dependencies with enabled cache
+ENV UV_LINK_MODE=copy
+RUN --mount=type=cache,target=/root/.cache/uv \
+  --mount=type=bind,source=uv.lock,target=uv.lock \
+  --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+  uv sync --locked --no-install-project
+
+# Copy application source code
+COPY . /app
+
+# Create and set ownership of app directory and user home
+RUN chown -R appuser:appuser /app /home/appuser
+
+# Switch to non-privileged user
+USER appuser
+
+# Set environment variable PYTHONPATH to include the app directory
+ENV PYTHONPATH=/app
+
+# Add virtualenv to PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Expose default FastAPI/Uvicorn port
 EXPOSE 8000
 
-CMD ["python", "-m", "api.api_main"]
+CMD ["uv", "run", "-m", "api.api_main"]

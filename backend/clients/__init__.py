@@ -10,10 +10,12 @@ class Clients:
     async def startup() -> None:
         logger.info("Starting up clients...")
         engine = get_engine()
-        # Verify DB connection
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        logger.info("Database connection verified.")
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("Database connection verified.")
+        except Exception as exc:
+            logger.warning("Database connection check failed (will retry on first request): %s", exc)
 
     @staticmethod
     async def close() -> None:

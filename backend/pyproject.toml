@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "chemischill-backend"
@@ -12,7 +12,7 @@ dependencies = [
     "sqlalchemy>=2.0.36",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
-    "pydantic>=2.10.0",
+    "pydantic[email]>=2.10.0",
     "pyyaml>=6.0.2",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
@@ -31,6 +31,5 @@ dev = [
     "httpx>=0.28.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["api*", "clients*", "config*", "database*", "hooks*", "services*", "utils*"]
+[tool.hatch.build.targets.wheel]
+packages = ["api", "clients", "config", "database", "hooks", "services", "utils"]
