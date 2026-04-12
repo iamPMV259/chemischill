@@ -47,8 +47,8 @@ async def run_async_migrations() -> None:
     url = get_url()
     connect_args = {}
     if "supabase.co" in url or "supabase.com" in url:
-        import ssl as _ssl
-        connect_args["ssl"] = _ssl.create_default_context()
+        connect_args["ssl"] = "require"
+        connect_args["statement_cache_size"] = 0
     engine = create_async_engine(url, connect_args=connect_args)
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)

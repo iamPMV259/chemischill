@@ -17,11 +17,13 @@ def get_engine() -> AsyncEngine:
             url.replace("postgresql://", "postgresql+asyncpg://", 1)
                .replace("postgres://", "postgresql+asyncpg://", 1)
         )
-        # Supabase (direct: *.supabase.co, pooler: *.supabase.com) requires SSL
+        # Supabase pooler (transaction mode) requires:
+        # - ssl='require' (shared pooler has self-signed cert chain)
+        # - statement_cache_size=0 (transaction mode doesn't support prepared statements)
         connect_args = {}
         if "supabase.co" in url or "supabase.com" in url:
-            import ssl as _ssl
-            connect_args["ssl"] = _ssl.create_default_context()
+            connect_args["ssl"] = "require"
+            connect_args["statement_cache_size"] = 0
 
         _engine = create_async_engine(
             url,
