@@ -10,7 +10,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
+  # Local PostgreSQL for development only.
+  # For production, use Supabase Transaction Pooler via DATABASE_URL in .env.
   db:
     image: postgres:16-alpine
     environment:

@@ -17,9 +17,9 @@ def get_engine() -> AsyncEngine:
             url.replace("postgresql://", "postgresql+asyncpg://", 1)
                .replace("postgres://", "postgresql+asyncpg://", 1)
         )
-        # Supabase (*.supabase.co) requires SSL
+        # Supabase (direct: *.supabase.co, pooler: *.supabase.com) requires SSL
         connect_args = {}
-        if "supabase.co" in url:
+        if "supabase.co" in url or "supabase.com" in url:
             import ssl as _ssl
             connect_args["ssl"] = _ssl.create_default_context()
 
