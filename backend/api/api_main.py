@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 cfg = Configs.app()
 
 
+def _parse_allowed_origins(frontend_url: str) -> list[str]:
+    if not frontend_url:
+        return []
+    return [origin.strip() for origin in frontend_url.split(",") if origin.strip()]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await Clients.startup()
@@ -33,7 +39,7 @@ app.add_middleware(PrometheusMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[cfg.frontend_url] if cfg.frontend_url else ["*"],
+    allow_origins=_parse_allowed_origins(cfg.frontend_url),
     allow_origin_regex=cfg.frontend_origin_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
