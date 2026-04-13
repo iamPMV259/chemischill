@@ -1,13 +1,45 @@
 import logging
-from fastapi import Request
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from api import app
+
+from api.middleware import PrometheusMiddleware
 from api.routers import auth, users, tags, categories, documents, quizzes, community, teachers
+from clients import Clients
 from config.settings import Configs
 
 logger = logging.getLogger(__name__)
+cfg = Configs.app()
 
-# ── Routers ────────────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await Clients.startup()
+    yield
+    await Clients.close()
+
+
+app = FastAPI(
+    title=cfg.title,
+    version=cfg.version,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
+)
+
+app.add_middleware(PrometheusMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[cfg.frontend_url] if cfg.frontend_url else ["*"],
+    allow_origin_regex=cfg.frontend_origin_regex or None,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(tags.router)
@@ -18,24 +50,22 @@ app.include_router(community.router)
 app.include_router(teachers.router)
 
 
-# ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["health"])
 async def health():
     return {"status": "ok"}
 
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
 @app.get("/metrics", tags=["observability"])
 async def metrics():
     try:
-        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
         from starlette.responses import Response
+
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
     except ImportError:
         return {"error": "prometheus_client not installed"}
 
 
-# ── Global exception handler ───────────────────────────────────────────────────
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception: %s", exc)
@@ -44,5 +74,5 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
-    cfg = Configs.app()
+
     uvicorn.run("api.api_main:app", host="0.0.0.0", port=cfg.port, reload=(cfg.environment != "production"))

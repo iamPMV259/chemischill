@@ -34,9 +34,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy application source code
 COPY . /app
 
+# Sync the project itself inside the image.
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --locked
+
 # Create and set ownership of app directory and user home
 RUN chown -R appuser:appuser /app /home/appuser
-RUN chmod +x /app/start-render.sh
 
 # Switch to non-privileged user
 USER appuser
@@ -50,4 +53,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Expose default FastAPI/Uvicorn port
 EXPOSE 8000
 
-CMD ["/app/start-render.sh"]
+CMD ["uv", "run", "-m", "api.api_main"]
