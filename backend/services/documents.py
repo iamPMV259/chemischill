@@ -9,8 +9,8 @@ from database.models import (
 )
 from hooks.error import NotFoundError, ForbiddenError, ValidationError, ConflictError
 from utils.storage import (
-    upload_to_cloudinary, upload_to_supabase,
-    delete_from_cloudinary, delete_from_supabase, create_supabase_signed_url,
+    upload_to_cloudinary, upload_to_r2,
+    delete_from_cloudinary, delete_from_r2, create_r2_signed_url,
 )
 from .base_singleton import SingletonMeta
 
@@ -164,7 +164,7 @@ class DocumentsService(metaclass=SingletonMeta):
         if not doc.allow_download:
             raise ForbiddenError("Download not allowed for this document")
 
-        signed_url = create_supabase_signed_url(doc.file_key, 300)
+        signed_url = create_r2_signed_url(doc.file_key, 300)
         doc.downloads = (doc.downloads or 0) + 1
         db.add(DocumentDownload(user_id=user_id, document_id=doc.id))
         await db.commit()
@@ -225,7 +225,7 @@ class DocumentsService(metaclass=SingletonMeta):
 
         file_data = await file.read()
         file_path = f"documents/{os.urandom(8).hex()}-{file.filename}"
-        file_url, file_key = upload_to_supabase(file_data, file_path, file.content_type or "application/octet-stream")
+        file_url, file_key = upload_to_r2(file_data, file_path, file.content_type or "application/octet-stream")
 
         thumbnail_url = None
         thumbnail_key = None
@@ -303,9 +303,9 @@ class DocumentsService(metaclass=SingletonMeta):
 
         if file:
             file_data = await file.read()
-            delete_from_supabase(doc.file_key)
+            delete_from_r2(doc.file_key)
             file_path = f"documents/{os.urandom(8).hex()}-{file.filename}"
-            doc.file_url, doc.file_key = upload_to_supabase(file_data, file_path, file.content_type or "application/octet-stream")
+            doc.file_url, doc.file_key = upload_to_r2(file_data, file_path, file.content_type or "application/octet-stream")
             doc.file_type = MIME_TO_FILETYPE.get(file.content_type or "", FileTypeEnum.PDF)
             doc.file_size_bytes = len(file_data)
 
@@ -344,7 +344,7 @@ class DocumentsService(metaclass=SingletonMeta):
         if not doc:
             raise NotFoundError("Document not found")
         try:
-            delete_from_supabase(doc.file_key)
+            delete_from_r2(doc.file_key)
         except Exception:
             pass
         if doc.thumbnail_key:

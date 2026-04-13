@@ -1,9 +1,12 @@
+from urllib.parse import quote
+
+import boto3
 import cloudinary
 import cloudinary.uploader
-from supabase import create_client, Client
 from config.settings import Configs
+from hooks.error import ValidationError
 
-_supabase: Client | None = None
+_r2_client = None
 
 
 def _init_cloudinary() -> None:
@@ -15,12 +18,20 @@ def _init_cloudinary() -> None:
     )
 
 
-def get_supabase() -> Client:
-    global _supabase
-    if _supabase is None:
+def get_r2_client():
+    global _r2_client
+    if _r2_client is None:
         cfg = Configs.storage()
-        _supabase = create_client(cfg.supabase_url, cfg.supabase_service_key)
-    return _supabase
+        if not all([cfg.r2_endpoint_url, cfg.r2_access_key_id, cfg.r2_secret_access_key]):
+            raise ValidationError("Cloudflare R2 storage is not configured")
+        _r2_client = boto3.client(
+            "s3",
+            endpoint_url=cfg.r2_endpoint_url,
+            aws_access_key_id=cfg.r2_access_key_id,
+            aws_secret_access_key=cfg.r2_secret_access_key,
+            region_name="auto",
+        )
+    return _r2_client
 
 
 def upload_to_cloudinary(
@@ -44,23 +55,43 @@ def delete_from_cloudinary(public_id: str) -> None:
     cloudinary.uploader.destroy(public_id)
 
 
-def upload_to_supabase(data: bytes, file_path: str, content_type: str) -> tuple[str, str]:
-    """Returns (public_url, key)."""
-    sb = get_supabase()
-    bucket = Configs.storage().supabase_storage_bucket
-    sb.storage.from_(bucket).upload(file_path, data, {"content-type": content_type})
-    url = sb.storage.from_(bucket).get_public_url(file_path)
-    return url, file_path
+def upload_to_r2(data: bytes, file_path: str, content_type: str) -> tuple[str, str]:
+    client = get_r2_client()
+    cfg = Configs.storage()
+    if not cfg.r2_bucket:
+        raise ValidationError("Cloudflare R2 bucket is not configured")
 
-
-def delete_from_supabase(file_path: str) -> None:
-    sb = get_supabase()
-    sb.storage.from_(Configs.storage().supabase_storage_bucket).remove([file_path])
-
-
-def create_supabase_signed_url(file_path: str, expires_in: int = 300) -> str:
-    sb = get_supabase()
-    result = sb.storage.from_(Configs.storage().supabase_storage_bucket).create_signed_url(
-        file_path, expires_in
+    client.put_object(
+        Bucket=cfg.r2_bucket,
+        Key=file_path,
+        Body=data,
+        ContentType=content_type,
     )
-    return result["signedURL"]
+    return create_r2_public_url(file_path), file_path
+
+
+def delete_from_r2(file_path: str) -> None:
+    client = get_r2_client()
+    cfg = Configs.storage()
+    if not cfg.r2_bucket:
+        raise ValidationError("Cloudflare R2 bucket is not configured")
+    client.delete_object(Bucket=cfg.r2_bucket, Key=file_path)
+
+
+def create_r2_signed_url(file_path: str, expires_in: int = 300) -> str:
+    client = get_r2_client()
+    cfg = Configs.storage()
+    if not cfg.r2_bucket:
+        raise ValidationError("Cloudflare R2 bucket is not configured")
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": cfg.r2_bucket, "Key": file_path},
+        ExpiresIn=expires_in,
+    )
+
+
+def create_r2_public_url(file_path: str) -> str:
+    cfg = Configs.storage()
+    if cfg.r2_public_base_url:
+        return f"{cfg.r2_public_base_url.rstrip('/')}/{quote(file_path)}"
+    raise ValidationError("Cloudflare R2 public base URL is not configured")

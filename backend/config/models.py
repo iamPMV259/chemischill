@@ -21,12 +21,15 @@ class DatabaseConfig(BaseModel):
 
 
 class StorageConfig(BaseModel):
-    cloudinary_cloud_name: str
-    cloudinary_api_key: str
-    cloudinary_api_secret: str
-    supabase_url: str
-    supabase_service_key: str
-    supabase_storage_bucket: str
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+    r2_endpoint_url: str = ""
+    r2_public_base_url: str = ""
 
 
 class RootConfig(BaseModel):
