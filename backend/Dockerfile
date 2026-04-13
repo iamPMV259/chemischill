@@ -36,6 +36,7 @@ COPY . /app
 
 # Create and set ownership of app directory and user home
 RUN chown -R appuser:appuser /app /home/appuser
+RUN chmod +x /app/start-render.sh
 
 # Switch to non-privileged user
 USER appuser
@@ -49,4 +50,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Expose default FastAPI/Uvicorn port
 EXPOSE 8000
 
-CMD ["uv", "run", "-m", "api.api_main"]
+CMD ["/app/start-render.sh"]
