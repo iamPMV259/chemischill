@@ -6,6 +6,7 @@ class AppConfig(BaseModel):
     version: str = "1.0.0"
     environment: str = "development"
     frontend_url: str = "http://localhost:5173"
+    frontend_origin_regex: str = ""
     port: int = 8000
 
 

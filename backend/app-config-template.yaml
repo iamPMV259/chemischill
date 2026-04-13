@@ -3,6 +3,7 @@ app:
   version: "1.0.0"
   environment: "${ENVIRONMENT}"
   frontend_url: "${FRONTEND_URL}"
+  frontend_origin_regex: "${FRONTEND_ORIGIN_REGEX}"
   port: 8000
 
 authentication:

@@ -20,6 +20,10 @@ def _is_production() -> bool:
     return Configs.app().environment == "production"
 
 
+def _cookie_samesite() -> str:
+    return "none" if _is_production() else "strict"
+
+
 def _map_exc(e: BaseAppException) -> HTTPException:
     return HTTPException(status_code=e.status_code, detail=e.message)
 
@@ -32,7 +36,7 @@ async def register(body: RegisterRequest, response: Response, db: AsyncSession =
         raise _map_exc(e)
     response.set_cookie(
         key="refresh_token", value=refresh_token,
-        httponly=True, samesite="strict",
+        httponly=True, samesite=_cookie_samesite(),
         secure=_is_production(),
         max_age=_cookie_max_age(),
     )
@@ -47,7 +51,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
         raise _map_exc(e)
     response.set_cookie(
         key="refresh_token", value=refresh_token,
-        httponly=True, samesite="strict",
+        httponly=True, samesite=_cookie_samesite(),
         secure=_is_production(),
         max_age=_cookie_max_age(),
     )
@@ -56,7 +60,11 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 
 @router.post("/logout")
 async def logout(response: Response, _user=Depends(get_current_user)):
-    response.delete_cookie("refresh_token")
+    response.delete_cookie(
+        "refresh_token",
+        secure=_is_production(),
+        samesite=_cookie_samesite(),
+    )
     return {"message": "Logged out"}
 
 

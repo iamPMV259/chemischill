@@ -29,6 +29,7 @@ app.add_middleware(PrometheusMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[Configs.app().frontend_url],
+    allow_origin_regex=Configs.app().frontend_origin_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
