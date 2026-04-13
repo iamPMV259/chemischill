@@ -2,7 +2,7 @@ import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from api import app
-from api.routers import auth, users, tags, categories, documents, quizzes, community
+from api.routers import auth, users, tags, categories, documents, quizzes, community, teachers
 from config.settings import Configs
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,7 @@ app.include_router(categories.router)
 app.include_router(documents.router)
 app.include_router(quizzes.router)
 app.include_router(community.router)
+app.include_router(teachers.router)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────

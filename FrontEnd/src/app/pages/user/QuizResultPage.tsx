@@ -3,24 +3,28 @@ import { Trophy, CheckCircle, XCircle, TrendingUp, Share2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { motion } from 'motion/react';
-import { quizzes } from '../../data/mockData';
 import confetti from 'canvas-confetti';
 import { useEffect } from 'react';
 
 export default function QuizResultPage() {
   const { id } = useParams();
   const location = useLocation();
-  const quiz = quizzes.find((q) => q.id === id);
 
-  const { answers = {}, questions = [] } = location.state || {};
+  // State from QuizTakingPage: { quiz, submission, selectedAnswers }
+  const { quiz, submission, selectedAnswers = {} } = location.state || {};
 
-  const correctCount = Object.entries(answers).filter(
-    ([index, answer]) => questions[parseInt(index)]?.correctAnswer === answer
-  ).length;
+  const score = submission?.score ?? 0;
+  const awardedPoints = submission?.awarded_points ?? 0;
+  const totalPoints = submission?.total_points ?? quiz?.totalPoints ?? 0;
+  const totalQuestions = submission?.total_questions ?? 1;
+  const scorePercent = Math.round((score / totalQuestions) * 100);
+  const passed = scorePercent >= 60;
 
-  const totalQuestions = questions.length || 1;
-  const score = Math.round((correctCount / totalQuestions) * 100);
-  const passed = score >= 60;
+  // Build a map of question_id → is_correct from submission answers
+  const submissionAnswerMap: Record<string, boolean> = {};
+  (submission?.answers ?? []).forEach((a: any) => {
+    submissionAnswerMap[a.question_id] = a.is_correct;
+  });
 
   useEffect(() => {
     if (passed) {
@@ -32,9 +36,18 @@ export default function QuizResultPage() {
     }
   }, [passed]);
 
-  if (!quiz) {
-    return <div className="max-w-4xl mx-auto px-6 py-12 text-center">Quiz not found</div>;
+  if (!quiz || !submission) {
+    return (
+      <div className="max-w-4xl mx-auto px-6 py-12 text-center">
+        <p className="text-gray-500 mb-4">Kết quả không khả dụng</p>
+        <Link to="/quizzes">
+          <Button>Quay Lại Quiz</Button>
+        </Link>
+      </div>
+    );
   }
+
+  const questions = quiz.questions || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-12">
@@ -54,18 +67,16 @@ export default function QuizResultPage() {
 
           <div className="grid md:grid-cols-3 gap-6 mb-8">
             <div className="p-6 bg-blue-50 rounded-xl">
-              <div className="text-4xl font-bold text-blue-600 mb-1">{score}%</div>
-              <div className="text-sm text-gray-600">Điểm Của Bạn</div>
+              <div className="text-4xl font-bold text-blue-600 mb-1">{scorePercent}%</div>
+              <div className="text-sm text-gray-600">Tỉ Lệ Đúng</div>
             </div>
             <div className="p-6 bg-green-50 rounded-xl">
-              <div className="text-4xl font-bold text-green-600 mb-1">{correctCount}</div>
+              <div className="text-4xl font-bold text-green-600 mb-1">{score}</div>
               <div className="text-sm text-gray-600">Câu Đúng</div>
             </div>
             <div className="p-6 bg-orange-50 rounded-xl">
-              <div className="text-4xl font-bold text-orange-600 mb-1">
-                {totalQuestions - correctCount}
-              </div>
-              <div className="text-sm text-gray-600">Câu Sai</div>
+              <div className="text-4xl font-bold text-orange-600 mb-1">{awardedPoints}</div>
+              <div className="text-sm text-gray-600">Điểm Nhận Được{totalPoints ? ` / ${totalPoints}` : ''}</div>
             </div>
           </div>
 
@@ -76,37 +87,38 @@ export default function QuizResultPage() {
                 Xem Bảng Xếp Hạng
               </Button>
             </Link>
-            <Link to={`/quizzes/${id}/take`}>
-              <Button>Làm Lại</Button>
+            {quiz?.attemptMode === 'MULTIPLE' && (
+              <Link to={`/quizzes/${id}/take`}>
+                <Button>Làm Lại</Button>
+              </Link>
+            )}
+            <Link to={`/quizzes/${id}/share`} state={{ quiz, submission, selectedAnswers }}>
+              <Button variant="outline">
+                <Share2 className="w-4 h-4 mr-2" />
+                Chia Sẻ Kết Quả
+              </Button>
             </Link>
-            <Button variant="outline">
-              <Share2 className="w-4 h-4 mr-2" />
-              Chia Sẻ Kết Quả
-            </Button>
           </div>
         </motion.div>
 
-        {/* Answer Explanations */}
+        {/* Answer Review */}
         <div className="space-y-4">
           <h2 className="text-2xl font-bold mb-6">Xem Lại Đáp Án</h2>
           {questions.map((question: any, index: number) => {
-            const userAnswer = answers[index];
-            const isCorrect = userAnswer === question.correctAnswer;
+            const isCorrect = submissionAnswerMap[question.id] ?? false;
+            const userOptionId = selectedAnswers[question.id];
+            const userOption = (question.options || []).find((o: any) => o.id === userOptionId);
 
             return (
               <motion.div
-                key={index}
+                key={question.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: index * 0.1 }}
+                transition={{ duration: 0.4, delay: index * 0.05 }}
                 className="bg-white rounded-xl shadow-lg p-6"
               >
                 <div className="flex items-start gap-4 mb-4">
-                  <div
-                    className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                      isCorrect ? 'bg-green-100' : 'bg-red-100'
-                    }`}
-                  >
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isCorrect ? 'bg-green-100' : 'bg-red-100'}`}>
                     {isCorrect ? (
                       <CheckCircle className="w-5 h-5 text-green-600" />
                     ) : (
@@ -115,54 +127,48 @@ export default function QuizResultPage() {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm font-semibold text-gray-500">
-                        Câu hỏi {index + 1}
-                      </span>
+                      <span className="text-sm font-semibold text-gray-500">Câu hỏi {index + 1}</span>
                       {isCorrect ? (
                         <Badge className="bg-green-500">Đúng</Badge>
                       ) : (
                         <Badge variant="destructive">Sai</Badge>
                       )}
                     </div>
-                    <h3 className="font-semibold text-lg mb-4">{question.question}</h3>
+                    <h3 className="font-semibold text-lg mb-4">{question.question_text}</h3>
 
                     <div className="space-y-2 mb-4">
-                      {question.options.map((option: string, optIndex: number) => {
-                        const isUserAnswer = userAnswer === optIndex;
-                        const isCorrectAnswer = question.correctAnswer === optIndex;
-
+                      {(question.options || []).map((option: any) => {
+                        const isUserAnswer = option.id === userOptionId;
                         return (
                           <div
-                            key={optIndex}
+                            key={option.id}
                             className={`p-3 rounded-lg border-2 ${
-                              isCorrectAnswer
+                              isUserAnswer && isCorrect
                                 ? 'border-green-500 bg-green-50'
-                                : isUserAnswer
+                                : isUserAnswer && !isCorrect
                                 ? 'border-red-500 bg-red-50'
                                 : 'border-gray-200'
                             }`}
                           >
                             <div className="flex items-center gap-2">
-                              {isCorrectAnswer && (
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                              )}
-                              {isUserAnswer && !isCorrectAnswer && (
-                                <XCircle className="w-4 h-4 text-red-600" />
-                              )}
-                              <span>{option}</span>
+                              {isUserAnswer && isCorrect && <CheckCircle className="w-4 h-4 text-green-600" />}
+                              {isUserAnswer && !isCorrect && <XCircle className="w-4 h-4 text-red-600" />}
+                              <span>{option.option_text}</span>
                             </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    {!isCorrect && (
+                    {!isCorrect && question.explanation && (
                       <div className="p-4 bg-blue-50 rounded-lg">
-                        <div className="text-sm font-semibold text-blue-900 mb-1">
-                          Giải thích:
-                        </div>
+                        <div className="text-sm font-semibold text-blue-900 mb-1">Giải thích:</div>
                         <div className="text-sm text-blue-700">{question.explanation}</div>
                       </div>
+                    )}
+
+                    {!isCorrect && !userOption && (
+                      <p className="text-sm text-gray-500 italic">Bạn chưa trả lời câu này</p>
                     )}
                   </div>
                 </div>
@@ -173,9 +179,7 @@ export default function QuizResultPage() {
 
         <div className="mt-8 text-center">
           <Link to="/quizzes">
-            <Button variant="outline" size="lg">
-              Quay Lại Quiz
-            </Button>
+            <Button variant="outline" size="lg">Quay Lại Quiz</Button>
           </Link>
         </div>
       </div>

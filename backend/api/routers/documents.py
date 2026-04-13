@@ -60,7 +60,31 @@ async def download_document(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await DocumentsService().get_download_url(db, doc_id)
+        return await DocumentsService().get_download_url(db, doc_id, current_user.id)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.post("/documents/{doc_id}/save", status_code=201)
+async def save_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await DocumentsService().save_document(db, current_user.id, doc_id)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.delete("/documents/{doc_id}/save")
+async def unsave_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await DocumentsService().unsave_document(db, current_user.id, doc_id)
     except BaseAppException as e:
         raise _map_exc(e)
 
@@ -76,6 +100,18 @@ async def admin_list_documents(
     params = pagination_params(page, limit)
     docs, total = await DocumentsService().admin_list_documents(db, search, params["skip"], params["limit"])
     return {"data": docs, "pagination": paginate(total, params["page"], params["limit"]).model_dump()}
+
+
+@router.get("/admin/documents/{doc_id}")
+async def admin_get_document(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    try:
+        return await DocumentsService().admin_get_document(db, doc_id)
+    except BaseAppException as e:
+        raise _map_exc(e)
 
 
 @router.post("/admin/documents", status_code=201)

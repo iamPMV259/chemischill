@@ -90,6 +90,63 @@ async def get_public_profile(user_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/users/me/saved-documents")
+async def get_saved_documents(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        return {"data": await UsersService().get_saved_documents(db, current_user.id)}
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.get("/users/me/download-history")
+async def get_download_history(
+    limit: int = Query(default=50, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return {"data": await UsersService().get_download_history(db, current_user.id, limit)}
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.get("/users/me/quiz-history")
+async def get_quiz_history(
+    limit: int = Query(default=50, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return {"data": await UsersService().get_quiz_history(db, current_user.id, limit)}
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.get("/users/me/questions")
+async def get_my_questions(
+    include_unapproved: bool = Query(default=True),
+    limit: int = Query(default=50, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return {"data": await UsersService().get_my_questions(db, current_user.id, include_unapproved, limit)}
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.get("/users/{user_id}/activity")
+async def get_public_activity(
+    user_id: str,
+    limit: int = Query(default=20, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await UsersService().get_public_activity(db, user_id, limit)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
 @router.get("/leaderboard")
 async def get_leaderboard(
     period: str = Query(default="all-time"),

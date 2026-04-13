@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { Search, BookOpen, Brain, MessageCircle, Trophy, User, Beaker, Globe, Info, LogOut } from 'lucide-react';
+import { Search, BookOpen, Brain, MessageCircle, Trophy, User, Beaker, Globe, Info, LogOut, LayoutDashboard, KeyRound } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { motion } from 'motion/react';
@@ -103,6 +103,17 @@ export default function UserLayout() {
                       <User className="w-4 h-4 mr-2" />
                       {language === 'vi' ? 'Hồ sơ' : 'Profile'}
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigate('/change-password')}>
+                      <KeyRound className="w-4 h-4 mr-2" />
+                      {language === 'vi' ? 'Đổi mật khẩu' : 'Change password'}
+                    </DropdownMenuItem>
+                    {user?.role === 'ADMIN' && (
+                      <DropdownMenuItem onClick={() => navigate('/admin')}>
+                        <LayoutDashboard className="w-4 h-4 mr-2" />
+                        {language === 'vi' ? 'Giao diện quản lý' : 'Admin panel'}
+                      </DropdownMenuItem>
+                    )}
+                    {user?.role === 'ADMIN' && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       onClick={() => {
                         logout();

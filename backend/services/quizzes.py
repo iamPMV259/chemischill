@@ -1,10 +1,11 @@
 import logging
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, or_
 from sqlalchemy.orm import selectinload
 from database.models import (
     Quiz, QuizQuestion, QuizOption, QuizTag, QuizSubmission, QuizSubmissionAnswer,
-    DifficultyEnum,
+    DifficultyEnum, QuizAttemptModeEnum, QuizRetryScoreModeEnum,
 )
 from hooks.error import NotFoundError, ValidationError
 from .base_singleton import SingletonMeta
@@ -21,11 +22,27 @@ def _quiz_to_dict(quiz: Quiz) -> dict:
         "time_limit": quiz.time_limit,
         "difficulty": quiz.difficulty.value,
         "is_published": quiz.is_published,
+        "total_points": quiz.total_points,
+        "attempt_mode": quiz.attempt_mode.value,
+        "retry_score_mode": quiz.retry_score_mode.value,
+        "retry_penalty_percent": quiz.retry_penalty_percent,
+        "count_points_once": quiz.count_points_once,
+        "available_from": quiz.available_from,
+        "available_until": quiz.available_until,
         "has_reward": quiz.has_reward,
         "reward_description": quiz.reward_description,
         "participants_count": quiz.participants_count,
         "question_count": len(quiz.questions),
-        "tags": [{"id": qt.tag.id, "name": qt.tag.name, "category": qt.tag.category.value} for qt in quiz.tags],
+        "tags": [
+            {
+                "id": qt.tag.id,
+                "name": qt.tag.name_vi or qt.tag.name,
+                "name_vi": qt.tag.name_vi or qt.tag.name,
+                "name_en": qt.tag.name,
+                "category": qt.tag.category.value,
+            }
+            for qt in quiz.tags
+        ],
         "created_at": quiz.created_at,
     }
 
@@ -38,6 +55,36 @@ _QUIZ_OPTIONS = [
 
 
 class QuizzesService(metaclass=SingletonMeta):
+
+    def _validate_quiz_settings(self, data: dict) -> None:
+        total_points = data.get("total_points", 100)
+        if total_points <= 0:
+            raise ValidationError("Quiz total points must be greater than 0")
+
+        available_from = data.get("available_from")
+        available_until = data.get("available_until")
+        if available_from and available_until and available_from >= available_until:
+            raise ValidationError("Quiz available_until must be after available_from")
+
+        retry_penalty_percent = data.get("retry_penalty_percent", 50)
+        if retry_penalty_percent < 0 or retry_penalty_percent > 100:
+            raise ValidationError("retry_penalty_percent must be between 0 and 100")
+
+    def _compute_awarded_points(
+        self,
+        quiz: Quiz,
+        score: int,
+        total_questions: int,
+        attempt_number: int,
+    ) -> int:
+        raw_points = round((score / total_questions) * quiz.total_points) if total_questions else 0
+        if attempt_number <= 1:
+            return raw_points
+        if quiz.retry_score_mode == QuizRetryScoreModeEnum.ZERO:
+            return 0
+        if quiz.retry_score_mode == QuizRetryScoreModeEnum.REDUCED:
+            return round(raw_points * quiz.retry_penalty_percent / 100)
+        return raw_points
 
     async def list_quizzes(
         self,
@@ -52,6 +99,8 @@ class QuizzesService(metaclass=SingletonMeta):
         query = (
             select(Quiz)
             .where(Quiz.is_published == True)
+            .where(or_(Quiz.available_from.is_(None), Quiz.available_from <= datetime.utcnow()))
+            .where(or_(Quiz.available_until.is_(None), Quiz.available_until >= datetime.utcnow()))
             .options(*_QUIZ_OPTIONS)
         )
         if search:
@@ -74,6 +123,8 @@ class QuizzesService(metaclass=SingletonMeta):
         result = await db.execute(
             select(Quiz)
             .where(Quiz.is_published == True)
+            .where(or_(Quiz.available_from.is_(None), Quiz.available_from <= datetime.utcnow()))
+            .where(or_(Quiz.available_until.is_(None), Quiz.available_until >= datetime.utcnow()))
             .options(*_QUIZ_OPTIONS)
             .order_by(Quiz.participants_count.desc())
             .limit(3)
@@ -96,6 +147,13 @@ class QuizzesService(metaclass=SingletonMeta):
             "description": quiz.description,
             "time_limit": quiz.time_limit,
             "difficulty": quiz.difficulty.value,
+            "total_points": quiz.total_points,
+            "attempt_mode": quiz.attempt_mode.value,
+            "retry_score_mode": quiz.retry_score_mode.value,
+            "retry_penalty_percent": quiz.retry_penalty_percent,
+            "count_points_once": quiz.count_points_once,
+            "available_from": quiz.available_from,
+            "available_until": quiz.available_until,
             "has_reward": quiz.has_reward,
             "question_count": len(quiz.questions),
             "questions": [
@@ -130,8 +188,24 @@ class QuizzesService(metaclass=SingletonMeta):
         if not quiz:
             raise NotFoundError("Quiz not found")
 
+        now = datetime.utcnow()
+        if quiz.available_from and now < quiz.available_from:
+            raise ValidationError("Quiz is not open yet")
+        if quiz.available_until and now > quiz.available_until:
+            raise ValidationError("Quiz has ended")
+
         question_map = {q.id: q for q in quiz.questions}
         option_map = {o.id: o for q in quiz.questions for o in q.options}
+
+        previous_result = await db.execute(
+            select(QuizSubmission)
+            .where(QuizSubmission.user_id == user_id, QuizSubmission.quiz_id == quiz_id)
+            .order_by(QuizSubmission.submitted_at.asc())
+        )
+        previous_submissions = previous_result.scalars().all()
+        if quiz.attempt_mode == QuizAttemptModeEnum.SINGLE and previous_submissions:
+            raise ValidationError("This quiz can only be taken once")
+        attempt_number = len(previous_submissions) + 1
 
         for ans in answers:
             if ans["question_id"] not in question_map:
@@ -156,12 +230,15 @@ class QuizzesService(metaclass=SingletonMeta):
 
         score = sum(1 for r in results if r["is_correct"])
         total_q = len(quiz.questions)
+        awarded_points = self._compute_awarded_points(quiz, score, total_q, attempt_number)
 
         submission = QuizSubmission(
             user_id=user_id,
             quiz_id=quiz_id,
             score=score,
+            awarded_points=awarded_points,
             total_questions=total_q,
+            attempt_number=attempt_number,
             time_taken_secs=time_taken_secs,
         )
         db.add(submission)
@@ -181,6 +258,9 @@ class QuizzesService(metaclass=SingletonMeta):
         return {
             "submission_id": submission.id,
             "score": score,
+            "awarded_points": awarded_points,
+            "total_points": quiz.total_points,
+            "attempt_number": attempt_number,
             "total_questions": total_q,
             "percentage": round(score / total_q * 100) if total_q else 0,
             "passed": score / total_q >= 0.6 if total_q else False,
@@ -193,6 +273,7 @@ class QuizzesService(metaclass=SingletonMeta):
             select(QuizSubmission)
             .where(QuizSubmission.user_id == user_id, QuizSubmission.quiz_id == quiz_id)
             .options(
+                sl(QuizSubmission.quiz),
                 sl(QuizSubmission.answers)
                 .selectinload(QuizSubmissionAnswer.question)
                 .selectinload(QuizQuestion.options)
@@ -219,6 +300,9 @@ class QuizzesService(metaclass=SingletonMeta):
         return {
             "submission_id": submission.id,
             "score": submission.score,
+            "awarded_points": submission.awarded_points,
+            "attempt_number": submission.attempt_number,
+            "total_points": submission.quiz.total_points if submission.quiz else 0,
             "total_questions": total_q,
             "percentage": round(submission.score / total_q * 100) if total_q else 0,
             "passed": submission.score / total_q >= 0.6 if total_q else False,
@@ -242,6 +326,36 @@ class QuizzesService(metaclass=SingletonMeta):
         quizzes_result = await db.execute(query.order_by(Quiz.created_at.desc()).offset(skip).limit(limit))
         quizzes = quizzes_result.scalars().all()
         return [_quiz_to_dict(q) for q in quizzes], total
+
+    async def admin_get_quiz(self, db: AsyncSession, quiz_id: str) -> dict:
+        result = await db.execute(
+            select(Quiz).where(Quiz.id == quiz_id).options(*_QUIZ_OPTIONS)
+        )
+        quiz = result.scalar_one_or_none()
+        if not quiz:
+            raise NotFoundError("Quiz not found")
+        data = _quiz_to_dict(quiz)
+        data["tag_ids"] = [qt.tag_id for qt in quiz.tags]
+        data["questions"] = [
+            {
+                "id": q.id,
+                "question_text": q.question_text,
+                "question_image_url": q.question_image_url,
+                "explanation": q.explanation,
+                "order_index": q.order_index,
+                "options": [
+                    {
+                        "id": o.id,
+                        "option_text": o.option_text,
+                        "is_correct": o.is_correct,
+                        "order_index": o.order_index,
+                    }
+                    for o in q.options
+                ],
+            }
+            for q in quiz.questions
+        ]
+        return data
 
     async def _create_questions(self, db: AsyncSession, quiz_id: str, questions: list[dict]) -> None:
         for qi, q in enumerate(questions):
@@ -270,6 +384,7 @@ class QuizzesService(metaclass=SingletonMeta):
     async def admin_create_quiz(self, db: AsyncSession, admin_id: str, data: dict) -> dict:
         if not data.get("questions"):
             raise ValidationError("Quiz must have at least 1 question")
+        self._validate_quiz_settings(data)
 
         quiz = Quiz(
             title=data["title"],
@@ -277,6 +392,13 @@ class QuizzesService(metaclass=SingletonMeta):
             topic=data.get("topic"),
             time_limit=data["time_limit"],
             difficulty=DifficultyEnum(data.get("difficulty", "MEDIUM")),
+            total_points=data.get("total_points", 100),
+            attempt_mode=QuizAttemptModeEnum(data.get("attempt_mode", "SINGLE")),
+            retry_score_mode=QuizRetryScoreModeEnum(data.get("retry_score_mode", "ZERO")),
+            retry_penalty_percent=data.get("retry_penalty_percent", 50),
+            count_points_once=data.get("count_points_once", True),
+            available_from=data.get("available_from"),
+            available_until=data.get("available_until"),
             has_reward=data.get("has_reward", False),
             reward_description=data.get("reward_description"),
             is_published=data.get("is_published", False),
@@ -302,6 +424,7 @@ class QuizzesService(metaclass=SingletonMeta):
         return {"id": quiz.id, "title": quiz.title, "is_published": quiz.is_published, "question_count": len(quiz.questions)}
 
     async def admin_update_quiz(self, db: AsyncSession, quiz_id: str, data: dict) -> dict:
+        self._validate_quiz_settings(data)
         result = await db.execute(
             select(Quiz).where(Quiz.id == quiz_id).options(*_QUIZ_OPTIONS)
         )
@@ -329,6 +452,10 @@ class QuizzesService(metaclass=SingletonMeta):
                 continue
             if k == "difficulty" and v:
                 quiz.difficulty = DifficultyEnum(v)
+            elif k == "attempt_mode" and v:
+                quiz.attempt_mode = QuizAttemptModeEnum(v)
+            elif k == "retry_score_mode" and v:
+                quiz.retry_score_mode = QuizRetryScoreModeEnum(v)
             elif v is not None:
                 setattr(quiz, k, v)
 
@@ -363,6 +490,13 @@ class QuizzesService(metaclass=SingletonMeta):
             topic=original.topic,
             time_limit=original.time_limit,
             difficulty=original.difficulty,
+            total_points=original.total_points,
+            attempt_mode=original.attempt_mode,
+            retry_score_mode=original.retry_score_mode,
+            retry_penalty_percent=original.retry_penalty_percent,
+            count_points_once=original.count_points_once,
+            available_from=original.available_from,
+            available_until=original.available_until,
             has_reward=original.has_reward,
             reward_description=original.reward_description,
             is_published=False,

@@ -3,8 +3,11 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from fastapi import UploadFile
-from database.models import Document, DocumentTag, Tag, FileTypeEnum, DocumentStatusEnum
-from hooks.error import NotFoundError, ForbiddenError, ValidationError
+from database.models import (
+    Document, DocumentTag, DocumentBookmark, DocumentDownload,
+    Tag, FileTypeEnum, DocumentStatusEnum,
+)
+from hooks.error import NotFoundError, ForbiddenError, ValidationError, ConflictError
 from utils.storage import (
     upload_to_cloudinary, upload_to_supabase,
     delete_from_cloudinary, delete_from_supabase, create_supabase_signed_url,
@@ -24,10 +27,15 @@ ALLOWED_MIMES = IMAGE_MIMES | DOC_MIMES
 
 
 def _doc_to_dict(doc: Document) -> dict:
+    preview_url = None
+    if doc.file_type in {FileTypeEnum.PDF, FileTypeEnum.IMAGE, FileTypeEnum.DOC, FileTypeEnum.DOCX}:
+        preview_url = doc.file_url
+
     return {
         "id": doc.id,
         "title": doc.title,
         "description": doc.description,
+        "file_url": doc.file_url,
         "thumbnail_url": doc.thumbnail_url,
         "file_type": doc.file_type.value,
         "file_size_bytes": doc.file_size_bytes,
@@ -36,8 +44,18 @@ def _doc_to_dict(doc: Document) -> dict:
         "status": doc.status.value,
         "views": doc.views,
         "downloads": doc.downloads,
+        "preview_url": preview_url,
         "created_at": doc.created_at,
-        "tags": [{"id": dt.tag.id, "name": dt.tag.name, "category": dt.tag.category.value} for dt in doc.tags],
+        "tags": [
+            {
+                "id": dt.tag.id,
+                "name": dt.tag.name_vi or dt.tag.name,
+                "name_vi": dt.tag.name_vi or dt.tag.name,
+                "name_en": dt.tag.name,
+                "category": dt.tag.category.value,
+            }
+            for dt in doc.tags
+        ],
         "category": {"id": doc.category.id, "name_vi": doc.category.name_vi, "name_en": doc.category.name_en} if doc.category else None,
     }
 
@@ -138,7 +156,7 @@ class DocumentsService(metaclass=SingletonMeta):
         await db.commit()
         return doc.views
 
-    async def get_download_url(self, db: AsyncSession, doc_id: str) -> dict:
+    async def get_download_url(self, db: AsyncSession, doc_id: str, user_id: str) -> dict:
         result = await db.execute(select(Document).where(Document.id == doc_id))
         doc = result.scalar_one_or_none()
         if not doc:
@@ -148,10 +166,45 @@ class DocumentsService(metaclass=SingletonMeta):
 
         signed_url = create_supabase_signed_url(doc.file_key, 300)
         doc.downloads = (doc.downloads or 0) + 1
+        db.add(DocumentDownload(user_id=user_id, document_id=doc.id))
         await db.commit()
 
         filename = f"{doc.title.lower().replace(' ', '-')}.{doc.file_type.value.lower()}"
         return {"download_url": signed_url, "filename": filename, "file_type": doc.file_type.value}
+
+    async def save_document(self, db: AsyncSession, user_id: str, doc_id: str) -> dict:
+        result = await db.execute(select(Document).where(Document.id == doc_id, Document.status == DocumentStatusEnum.PUBLIC))
+        doc = result.scalar_one_or_none()
+        if not doc:
+            raise NotFoundError("Document not found")
+
+        existing = await db.execute(
+            select(DocumentBookmark).where(
+                DocumentBookmark.user_id == user_id,
+                DocumentBookmark.document_id == doc_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise ConflictError("Document already saved")
+
+        db.add(DocumentBookmark(user_id=user_id, document_id=doc_id))
+        await db.commit()
+        return {"document_id": doc_id, "saved": True}
+
+    async def unsave_document(self, db: AsyncSession, user_id: str, doc_id: str) -> dict:
+        result = await db.execute(
+            select(DocumentBookmark).where(
+                DocumentBookmark.user_id == user_id,
+                DocumentBookmark.document_id == doc_id,
+            )
+        )
+        bookmark = result.scalar_one_or_none()
+        if not bookmark:
+            raise NotFoundError("Saved document not found")
+
+        await db.delete(bookmark)
+        await db.commit()
+        return {"document_id": doc_id, "saved": False}
 
     async def admin_create_document(
         self,
@@ -206,6 +259,29 @@ class DocumentsService(metaclass=SingletonMeta):
         await db.commit()
         await db.refresh(doc)
         return {"id": doc.id, "title": doc.title, "status": doc.status.value, "file_url": doc.file_url, "thumbnail_url": doc.thumbnail_url}
+
+    async def admin_get_document(self, db: AsyncSession, doc_id: str) -> dict:
+        from sqlalchemy.orm import selectinload
+        result = await db.execute(
+            select(Document)
+            .where(Document.id == doc_id)
+            .options(
+                selectinload(Document.tags).selectinload(DocumentTag.tag),
+                selectinload(Document.category),
+                selectinload(Document.uploaded_by),
+            )
+        )
+        doc = result.scalar_one_or_none()
+        if not doc:
+            raise NotFoundError("Document not found")
+
+        out = _doc_to_dict(doc)
+        out["uploaded_by"] = {
+            "id": doc.uploaded_by.id,
+            "username": doc.uploaded_by.username,
+            "full_name": doc.uploaded_by.full_name,
+        } if doc.uploaded_by else None
+        return out
 
     async def admin_update_document(
         self,

@@ -20,6 +20,11 @@ import EditProfilePage from './pages/user/EditProfilePage';
 import PublicProfilePage from './pages/user/PublicProfilePage';
 import TeacherProfilePage from './pages/user/TeacherProfilePage';
 import AboutPage from './pages/user/AboutPage';
+import ForgotPasswordPage from './pages/user/ForgotPasswordPage';
+import ChangePasswordPage from './pages/user/ChangePasswordPage';
+import TeacherContactPage from './pages/user/TeacherContactPage';
+import SavedItemsPage from './pages/user/SavedItemsPage';
+import QuizSharePage from './pages/user/QuizSharePage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminDocumentsPage from './pages/admin/AdminDocumentsPage';
 import AdminUploadDocumentPage from './pages/admin/AdminUploadDocumentPage';
@@ -48,15 +53,19 @@ export const router = createBrowserRouter([
           { path: 'quizzes', Component: QuizListingPage },
           { path: 'quizzes/:id/take', Component: QuizTakingPage },
           { path: 'quizzes/:id/result', Component: QuizResultPage },
+          { path: 'quizzes/:id/share', Component: QuizSharePage },
           { path: 'leaderboard', Component: LeaderboardPage },
           { path: 'community', Component: CommunityQuestionsPage },
           { path: 'community/ask', Component: PostQuestionPage },
           { path: 'community/:id', Component: QuestionDetailPage },
           { path: 'about', Component: AboutPage },
+          { path: 'saved', Component: SavedItemsPage },
           { path: 'profile', Component: UserProfilePage },
           { path: 'profile/edit', Component: EditProfilePage },
+          { path: 'change-password', Component: ChangePasswordPage },
           { path: 'users/:id', Component: PublicProfilePage },
           { path: 'teachers/:id', Component: TeacherProfilePage },
+          { path: 'teachers/:id/contact', Component: TeacherContactPage },
         ],
       },
       {
@@ -66,6 +75,10 @@ export const router = createBrowserRouter([
       {
         path: 'register',
         Component: RegisterPage,
+      },
+      {
+        path: 'forgot-password',
+        Component: ForgotPasswordPage,
       },
       {
         path: 'profile-setup',

@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, Response, Cookie, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from api.dependencies import get_db, get_current_user
-from api.models import RegisterRequest, LoginRequest, TokenResponse, RefreshResponse, UserOut
+from api.models import RegisterRequest, LoginRequest, TokenResponse, RefreshResponse, UserOut, ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest
 from services.auth import AuthService
 from utils.jwt import decode_refresh_token, create_access_token
 from config.settings import Configs
@@ -69,3 +69,31 @@ async def refresh(refresh_token: str | None = Cookie(default=None)):
     except BaseAppException as e:
         raise _map_exc(e)
     return {"access_token": create_access_token(payload["sub"], payload["role"])}
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        return await AuthService().request_password_reset(db, body.email)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        return await AuthService().reset_password(db, body.token, body.new_password)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await AuthService().change_password(db, current_user.id, body.current_password, body.new_password)
+    except BaseAppException as e:
+        raise _map_exc(e)

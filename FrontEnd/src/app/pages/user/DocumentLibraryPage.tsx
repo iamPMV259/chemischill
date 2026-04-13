@@ -1,27 +1,67 @@
-import { useState } from 'react';
-import { Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Search } from 'lucide-react';
 import { Input } from '../../components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { motion, AnimatePresence } from 'motion/react';
-import { documents } from '../../data/mockData';
+import { motion } from 'motion/react';
+import { Link } from 'react-router';
+import { Eye, Download, Star } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { getCategoriesByParent, getSubcategories } from '../../data/categoryData';
-import DocumentRow from '../../components/DocumentRow';
+import { documentsService } from '../../../services/documents';
+import { tagsService } from '../../../services/tags';
+import { adaptDocument } from '../../../lib/adapters';
+import { toast } from 'sonner';
 
 export default function DocumentLibraryPage() {
-  const { language, t } = useLanguage();
+  const { t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('general');
-  const [inorganicExpanded, setInorganicExpanded] = useState(true);
-  const [organicExpanded, setOrganicExpanded] = useState(true);
+  const [tags, setTags] = useState<any[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const generalChemistryCategories = getCategoriesByParent(undefined).filter(cat =>
-    ['midterm', 'final', 'thpt'].includes(cat.id)
-  );
+  useEffect(() => {
+    tagsService.getTags().then((res) => {
+      setTags(res.data.data || []);
+    }).catch(() => {});
+  }, []);
 
-  const getCategoryDocs = (categoryId: string) => {
-    return documents.slice(0, 6);
+  const fetchDocuments = useCallback(() => {
+    setLoading(true);
+    documentsService.getDocuments({
+      search: searchQuery || undefined,
+      tag_ids: selectedTagIds.length > 0 ? selectedTagIds.join(',') : undefined,
+      page,
+      limit: 12,
+    })
+      .then((res) => {
+        setDocuments((res.data.data || []).map(adaptDocument));
+        setTotalPages(res.data.pagination?.pages ?? 1);
+      })
+      .catch(() => setDocuments([]))
+      .finally(() => setLoading(false));
+  }, [searchQuery, selectedTagIds, page]);
+
+  useEffect(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
+
+  const toggleTag = (tagId: string) => {
+    setPage(1);
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  };
+
+  const handleDownload = async (docId: string) => {
+    try {
+      const res = await documentsService.getDownloadUrl(docId);
+      window.open(res.data.download_url, '_blank');
+    } catch {
+      toast.error('Không thể tải tài liệu');
+    }
   };
 
   return (
@@ -37,141 +77,135 @@ export default function DocumentLibraryPage() {
         </div>
 
         {/* Search Bar */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <Input
               placeholder={t('docs.searchPlaceholder')}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
               className="pl-12 pr-4 py-6"
             />
           </div>
         </div>
 
-        {/* Tabs for General and Advanced Chemistry */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-8">
-            <TabsTrigger value="general" className="text-lg">
-              {t('docs.generalChemistry')}
-            </TabsTrigger>
-            <TabsTrigger value="advanced" className="text-lg">
-              {t('docs.advancedChemistry')}
-            </TabsTrigger>
-          </TabsList>
+        {/* Tag Filters */}
+        {tags.length > 0 && (
+          <div className="mb-8 p-6 bg-white rounded-xl shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <h3 className="font-semibold">Lọc Theo Chủ Đề</h3>
+              {selectedTagIds.length > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedTagIds([]); setPage(1); }} className="ml-auto text-xs">
+                  Xóa Tất Cả
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <Badge
+                  key={tag.id}
+                  variant={selectedTagIds.includes(tag.id) ? 'default' : 'secondary'}
+                  className="px-4 py-2 cursor-pointer hover:bg-blue-100"
+                  onClick={() => toggleTag(tag.id)}
+                >
+                  {tag.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
 
-          {/* General Chemistry Tab */}
-          <TabsContent value="general" className="space-y-8">
-            {generalChemistryCategories.map((category) => (
-              <DocumentRow
-                key={category.id}
-                title={language === 'vi' ? category.nameVi : category.nameEn}
-                documents={getCategoryDocs(category.id)}
-              />
+        {/* Results Count */}
+        <div className="mb-6">
+          <p className="text-gray-600">Tìm thấy {documents.length} tài liệu</p>
+        </div>
+
+        {/* Document Grid */}
+        {loading ? (
+          <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="bg-gray-100 rounded-xl h-64 animate-pulse" />
             ))}
-          </TabsContent>
-
-          {/* Advanced Chemistry Tab */}
-          <TabsContent value="advanced" className="space-y-12">
-            {/* Inorganic Chemistry Section */}
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="border-l-4 border-blue-600 pl-4 flex-1">
-                  <h2 className="text-3xl font-bold text-gray-900">
-                    {language === 'vi' ? 'Hóa Vô Cơ' : 'Inorganic Chemistry'}
-                  </h2>
+          </div>
+        ) : documents.length === 0 ? (
+          <div className="text-center py-16">
+            <h3 className="text-xl font-semibold text-gray-700 mb-2">Không tìm thấy tài liệu</h3>
+            <p className="text-gray-500">Thử điều chỉnh tìm kiếm hoặc bộ lọc</p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {documents.map((doc, index) => (
+              <motion.div
+                key={doc.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: index * 0.04 }}
+                className="flex-shrink-0"
+              >
+                <div className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 group h-full">
+                  <div className="relative h-40 overflow-hidden">
+                    <img
+                      src={doc.thumbnail}
+                      alt={doc.title}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
+                    {doc.featured && (
+                      <div className="absolute top-2 right-2">
+                        <Badge className="bg-orange-500 text-white text-xs">
+                          <Star className="w-3 h-3 mr-1" />
+                          {t('featuredDocs.featured')}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h4 className="font-semibold mb-2 line-clamp-2">{doc.title}</h4>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{doc.description}</p>
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+                      <div className="flex items-center gap-1">
+                        <Eye className="w-3 h-3" />
+                        {doc.views.toLocaleString()}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Download className="w-3 h-3" />
+                        {doc.downloads.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Link to={`/documents/${doc.id}`} className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full text-xs">
+                          <Eye className="w-3 h-3 mr-1" />
+                          {t('docs.preview')}
+                        </Button>
+                      </Link>
+                      {doc.allowDownload !== false && (
+                        <Button size="sm" className="flex-1 text-xs" onClick={() => handleDownload(doc.id)}>
+                          <Download className="w-3 h-3 mr-1" />
+                          {t('docs.download')}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => setInorganicExpanded(!inorganicExpanded)}
-                  className="ml-4"
-                >
-                  {inorganicExpanded ? (
-                    <>
-                      <ChevronUp className="w-5 h-5 mr-2" />
-                      {language === 'vi' ? 'Ẩn' : 'Hide'}
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="w-5 h-5 mr-2" />
-                      {language === 'vi' ? 'Hiện' : 'Show'}
-                    </>
-                  )}
-                </Button>
-              </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
 
-              <AnimatePresence>
-                {inorganicExpanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="space-y-6 overflow-hidden"
-                  >
-                    {getSubcategories('inorganic').map((subcategory) => (
-                      <DocumentRow
-                        key={subcategory.id}
-                        title={language === 'vi' ? subcategory.nameVi : subcategory.nameEn}
-                        documents={getCategoryDocs(subcategory.id)}
-                      />
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Organic Chemistry Section */}
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="border-l-4 border-purple-600 pl-4 flex-1">
-                  <h2 className="text-3xl font-bold text-gray-900">
-                    {language === 'vi' ? 'Hóa Hữu Cơ' : 'Organic Chemistry'}
-                  </h2>
-                </div>
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => setOrganicExpanded(!organicExpanded)}
-                  className="ml-4"
-                >
-                  {organicExpanded ? (
-                    <>
-                      <ChevronUp className="w-5 h-5 mr-2" />
-                      {language === 'vi' ? 'Ẩn' : 'Hide'}
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="w-5 h-5 mr-2" />
-                      {language === 'vi' ? 'Hiện' : 'Show'}
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              <AnimatePresence>
-                {organicExpanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="space-y-6 overflow-hidden"
-                  >
-                    {getSubcategories('organic').map((subcategory) => (
-                      <DocumentRow
-                        key={subcategory.id}
-                        title={language === 'vi' ? subcategory.nameVi : subcategory.nameEn}
-                        documents={getCategoryDocs(subcategory.id)}
-                      />
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </TabsContent>
-        </Tabs>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex justify-center gap-2 mt-8">
+            <Button variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
+              Trước
+            </Button>
+            <span className="flex items-center px-4 text-sm text-gray-600">
+              Trang {page} / {totalPages}
+            </span>
+            <Button variant="outline" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>
+              Tiếp
+            </Button>
+          </div>
+        )}
       </motion.div>
     </div>
   );

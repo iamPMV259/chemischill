@@ -53,6 +53,17 @@ class DifficultyEnum(str, enum.Enum):
     HARD = "HARD"
 
 
+class QuizAttemptModeEnum(str, enum.Enum):
+    SINGLE = "SINGLE"
+    MULTIPLE = "MULTIPLE"
+
+
+class QuizRetryScoreModeEnum(str, enum.Enum):
+    FULL = "FULL"
+    REDUCED = "REDUCED"
+    ZERO = "ZERO"
+
+
 class QuestionStatusEnum(str, enum.Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -119,6 +130,7 @@ class Tag(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_id)
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name_vi: Mapped[str | None] = mapped_column(String, nullable=True)
     category: Mapped[TagCategoryEnum] = mapped_column(SAEnum(TagCategoryEnum), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -154,6 +166,8 @@ class Document(Base):
     uploaded_by: Mapped["User"] = relationship(back_populates="uploaded_documents")
     category: Mapped["Category | None"] = relationship(back_populates="documents")
     tags: Mapped[list["DocumentTag"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    bookmarks: Mapped[list["DocumentBookmark"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    download_events: Mapped[list["DocumentDownload"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
 
 class DocumentTag(Base):
@@ -164,6 +178,29 @@ class DocumentTag(Base):
 
     document: Mapped["Document"] = relationship(back_populates="tags")
     tag: Mapped["Tag"] = relationship(back_populates="document_tags")
+
+
+class DocumentBookmark(Base):
+    __tablename__ = "document_bookmarks"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship()
+    document: Mapped["Document"] = relationship(back_populates="bookmarks")
+
+
+class DocumentDownload(Base):
+    __tablename__ = "document_downloads"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_id)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    document_id: Mapped[str] = mapped_column(String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship()
+    document: Mapped["Document"] = relationship(back_populates="download_events")
 
 
 # ─── Quiz ─────────────────────────────────────────────────────────────────────
@@ -178,6 +215,13 @@ class Quiz(Base):
     time_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     difficulty: Mapped[DifficultyEnum] = mapped_column(SAEnum(DifficultyEnum), default=DifficultyEnum.MEDIUM)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    total_points: Mapped[int] = mapped_column(Integer, default=100)
+    attempt_mode: Mapped[QuizAttemptModeEnum] = mapped_column(SAEnum(QuizAttemptModeEnum), default=QuizAttemptModeEnum.SINGLE)
+    retry_score_mode: Mapped[QuizRetryScoreModeEnum] = mapped_column(SAEnum(QuizRetryScoreModeEnum), default=QuizRetryScoreModeEnum.ZERO)
+    retry_penalty_percent: Mapped[int] = mapped_column(Integer, default=50)
+    count_points_once: Mapped[bool] = mapped_column(Boolean, default=True)
+    available_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    available_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     has_reward: Mapped[bool] = mapped_column(Boolean, default=False)
     reward_description: Mapped[str | None] = mapped_column(String, nullable=True)
     participants_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -237,7 +281,9 @@ class QuizSubmission(Base):
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
     quiz_id: Mapped[str] = mapped_column(String, ForeignKey("quizzes.id"), nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)
+    awarded_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     time_taken_secs: Mapped[int | None] = mapped_column(Integer, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -311,6 +357,7 @@ class CommunityAnswer(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_id)
     question_id: Mapped[str] = mapped_column(String, ForeignKey("community_questions.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
+    reply_to_answer_id: Mapped[str | None] = mapped_column(String, ForeignKey("community_answers.id", ondelete="CASCADE"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     upvotes: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -320,6 +367,8 @@ class CommunityAnswer(Base):
     user: Mapped["User"] = relationship(back_populates="community_answers")
     images: Mapped[list["CommunityAnswerImage"]] = relationship(back_populates="answer", cascade="all, delete-orphan", order_by="CommunityAnswerImage.order_index")
     upvoted_by: Mapped[list["AnswerUpvote"]] = relationship(back_populates="answer", cascade="all, delete-orphan")
+    parent_answer: Mapped["CommunityAnswer | None"] = relationship(remote_side="CommunityAnswer.id", back_populates="replies")
+    replies: Mapped[list["CommunityAnswer"]] = relationship(back_populates="parent_answer", cascade="all, delete-orphan")
 
 
 class CommunityAnswerImage(Base):
@@ -343,3 +392,18 @@ class AnswerUpvote(Base):
 
     user: Mapped["User"] = relationship(back_populates="answer_upvotes")
     answer: Mapped["CommunityAnswer"] = relationship(back_populates="upvoted_by")
+
+
+class TeacherInquiry(Base):
+    __tablename__ = "teacher_inquiries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_id)
+    teacher_id: Mapped[str] = mapped_column(String, nullable=False)
+    teacher_name: Mapped[str] = mapped_column(String, nullable=False)
+    sender_user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id"), nullable=True)
+    sender_name: Mapped[str] = mapped_column(String, nullable=False)
+    sender_email: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    sender_user: Mapped["User | None"] = relationship()

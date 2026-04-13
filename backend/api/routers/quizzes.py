@@ -85,6 +85,18 @@ async def admin_list_quizzes(
     return {"data": quizzes, "pagination": paginate(total, params["page"], params["limit"]).model_dump()}
 
 
+@router.get("/admin/quizzes/{quiz_id}")
+async def admin_get_quiz(
+    quiz_id: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await QuizzesService().admin_get_quiz(db, quiz_id)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+
 @router.post("/admin/quizzes", status_code=201)
 async def admin_create_quiz(
     body: CreateQuizRequest,

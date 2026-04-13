@@ -39,3 +39,24 @@ def decode_refresh_token(token: str) -> dict:
     except JWTError:
         from hooks.error import UnauthorizedError
         raise UnauthorizedError("Refresh token invalid or expired")
+
+
+def create_password_reset_token(user_id: str) -> str:
+    expire = datetime.utcnow() + timedelta(hours=1)
+    return jwt.encode(
+        {"sub": user_id, "purpose": "password_reset", "exp": expire},
+        Configs.auth().jwt_secret,
+        algorithm=ALGORITHM,
+    )
+
+
+def decode_password_reset_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, Configs.auth().jwt_secret, algorithms=[ALGORITHM])
+    except JWTError:
+        from hooks.error import UnauthorizedError
+        raise UnauthorizedError("Reset token invalid or expired")
+    if payload.get("purpose") != "password_reset":
+        from hooks.error import UnauthorizedError
+        raise UnauthorizedError("Reset token invalid or expired")
+    return payload

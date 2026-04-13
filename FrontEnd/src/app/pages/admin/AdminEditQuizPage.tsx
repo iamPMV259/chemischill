@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X, Upload, Image as ImageIcon } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -9,378 +9,233 @@ import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Switch } from '../../components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '../../components/ui/radio-group';
-import { tags, quizzes, sampleQuestions } from '../../data/mockData';
 import { toast } from 'sonner';
+import { tagsService } from '../../../services/tags';
+import { quizzesService } from '../../../services/quizzes';
+import { communityService } from '../../../services/community';
 
-interface QuizQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correctAnswer: number;
-  explanation: string;
-}
+const formatDateTimeLocal = (value?: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+const toIsoOrNull = (value: string) => (value ? new Date(value).toISOString() : null);
+
+const createQuestion = () => ({
+  id: crypto.randomUUID(),
+  question_text: '',
+  question_image_url: '',
+  explanation: '',
+  options: Array.from({ length: 4 }, (_, index) => ({
+    id: `${crypto.randomUUID()}-${index}`,
+    option_text: '',
+    is_correct: index === 0,
+  })),
+});
 
 export default function AdminEditQuizPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [quiz, setQuiz] = useState<any>(null);
+  const [tags, setTags] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
 
-  const existing = quizzes.find((q) => q.id === id);
+  useEffect(() => {
+    if (!id) return;
+    Promise.all([quizzesService.getAdminQuiz(id), tagsService.getTags()])
+      .then(([quizRes, tagsRes]) => {
+        setQuiz({
+          ...quizRes.data,
+          tag_ids: quizRes.data.tag_ids || [],
+          questions: (quizRes.data.questions || []).map((question: any) => ({
+            ...question,
+            explanation: question.explanation || '',
+            question_image_url: question.question_image_url || '',
+            options: (question.options || []).map((option: any) => ({ ...option })),
+          })),
+          available_from: formatDateTimeLocal(quizRes.data.available_from),
+          available_until: formatDateTimeLocal(quizRes.data.available_until),
+        });
+        setTags(tagsRes.data.data || []);
+      })
+      .catch(() => setQuiz(null))
+      .finally(() => setLoading(false));
+  }, [id]);
 
-  // Pre-populate with existing quiz data
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [description, setDescription] = useState(existing?.description ?? '');
-  const [selectedTags, setSelectedTags] = useState<string[]>(existing?.tags ?? []);
-  const [hasReward, setHasReward] = useState(existing?.reward ?? false);
-  const [rewardDescription, setRewardDescription] = useState(existing?.rewardDescription ?? '');
-  const [timeLimit, setTimeLimit] = useState(String(existing?.timeLimit ?? 20));
-  const [difficulty, setDifficulty] = useState(existing?.difficulty ?? 'medium');
-  // For demo, pre-populate with sample questions
-  const [questions, setQuestions] = useState<QuizQuestion[]>(
-    sampleQuestions.slice(0, existing?.questionCount ?? 0).map((q) => ({
-      id: q.id,
-      question: q.question,
-      options: q.options,
-      correctAnswer: q.correctAnswer,
-      explanation: q.explanation,
-    }))
-  );
-
-  if (!existing) {
-    return (
-      <div className="text-center py-20">
-        <p className="text-gray-500 mb-4">Quiz not found</p>
-        <Link to="/admin/quizzes">
-          <Button variant="outline">Back to Quizzes</Button>
-        </Link>
-      </div>
-    );
-  }
-
-  const addQuestion = () => {
-    setQuestions([
-      ...questions,
-      {
-        id: Date.now().toString(),
-        question: '',
-        options: ['', '', '', ''],
-        correctAnswer: 0,
-        explanation: '',
-      },
-    ]);
+  const updateQuestion = (questionId: string, patch: any) => {
+    setQuiz((prev: any) => ({
+      ...prev,
+      questions: prev.questions.map((question: any) => question.id === questionId ? { ...question, ...patch } : question),
+    }));
   };
 
-  const removeQuestion = (qId: string) => {
-    setQuestions(questions.filter((q) => q.id !== qId));
+  const updateOptionText = (questionId: string, optionId: string, value: string) => {
+    setQuiz((prev: any) => ({
+      ...prev,
+      questions: prev.questions.map((question: any) => question.id === questionId ? {
+        ...question,
+        options: question.options.map((option: any) => option.id === optionId ? { ...option, option_text: value } : option),
+      } : question),
+    }));
   };
 
-  const updateQuestion = (qId: string, field: string, value: any) => {
-    setQuestions(questions.map((q) => (q.id === qId ? { ...q, [field]: value } : q)));
+  const setCorrectOption = (questionId: string, selectedIndex: number) => {
+    setQuiz((prev: any) => ({
+      ...prev,
+      questions: prev.questions.map((question: any) => question.id === questionId ? {
+        ...question,
+        options: question.options.map((option: any, index: number) => ({ ...option, is_correct: index === selectedIndex })),
+      } : question),
+    }));
   };
 
-  const updateOption = (questionId: string, optionIndex: number, value: string) => {
-    setQuestions(
-      questions.map((q) =>
-        q.id === questionId
-          ? { ...q, options: q.options.map((opt, i) => (i === optionIndex ? value : opt)) }
-          : q
-      )
-    );
-  };
-
-  const toggleTag = (tagName: string) => {
-    if (selectedTags.includes(tagName)) {
-      setSelectedTags(selectedTags.filter((t) => t !== tagName));
-    } else {
-      setSelectedTags([...selectedTags, tagName]);
+  const uploadQuestionImage = async (questionId: string, file: File | null) => {
+    if (!file) return;
+    setUploadingQuestionId(questionId);
+    try {
+      const res = await communityService.uploadImage(file, 'question');
+      updateQuestion(questionId, { question_image_url: res.data.image_url });
+      toast.success('Đã tải ảnh câu hỏi lên');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Không thể tải ảnh câu hỏi');
+    } finally {
+      setUploadingQuestionId(null);
     }
   };
 
-  const handleSave = (publish: boolean) => {
-    if (!title || !description || selectedTags.length === 0 || questions.length === 0) {
-      toast.error('Please fill in all required fields and add at least one question');
-      return;
+  const save = async (publish: boolean) => {
+    if (!id || !quiz) return;
+    try {
+      await quizzesService.updateQuiz(id, {
+        title: quiz.title,
+        description: quiz.description,
+        topic: quiz.topic || null,
+        time_limit: Number(quiz.time_limit),
+        difficulty: quiz.difficulty,
+        total_points: Number(quiz.total_points),
+        attempt_mode: quiz.attempt_mode,
+        retry_score_mode: quiz.retry_score_mode,
+        retry_penalty_percent: Number(quiz.retry_penalty_percent),
+        count_points_once: Boolean(quiz.count_points_once),
+        available_from: toIsoOrNull(quiz.available_from),
+        available_until: toIsoOrNull(quiz.available_until),
+        has_reward: quiz.has_reward,
+        reward_description: quiz.has_reward ? quiz.reward_description : null,
+        tag_ids: quiz.tag_ids || [],
+        is_published: publish,
+        questions: (quiz.questions || []).map((question: any, questionIndex: number) => ({
+          question_text: question.question_text,
+          question_image_url: question.question_image_url || null,
+          explanation: question.explanation || null,
+          order_index: questionIndex,
+          options: (question.options || []).map((option: any, optionIndex: number) => ({
+            option_text: option.option_text,
+            is_correct: option.is_correct,
+            order_index: optionIndex,
+          })),
+        })),
+      });
+      toast.success('Quiz updated');
+      navigate('/admin/quizzes');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to update quiz');
     }
-    toast.success(publish ? 'Quiz saved and published!' : 'Quiz saved as draft!');
-    setTimeout(() => navigate('/admin/quizzes'), 1000);
   };
+
+  if (loading) return <div>Đang tải...</div>;
+  if (!quiz) return <div className="text-center py-20">Quiz not found</div>;
 
   return (
     <div>
-      <Link to="/admin/quizzes" className="inline-flex items-center gap-2 text-gray-600 mb-6 hover:text-gray-900">
-        <ArrowLeft className="w-4 h-4" />
-        Back to Quizzes
-      </Link>
-
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Edit Quiz</h1>
-        <p className="text-gray-600">Update quiz details and questions</p>
-      </div>
+      <Link to="/admin/quizzes" className="inline-flex items-center gap-2 text-gray-600 mb-6 hover:text-gray-900"><ArrowLeft className="w-4 h-4" />Back to Quizzes</Link>
+      <div className="mb-8"><h1 className="text-3xl font-bold mb-2">Edit Quiz</h1><p className="text-gray-600">Update quiz details and questions</p></div>
 
       <div className="grid lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          {/* Quiz Info */}
           <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
-            <h3 className="font-semibold text-lg mb-4">Quiz Information</h3>
-
-            <div>
-              <Label htmlFor="title">Quiz Title *</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="mt-2"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="description">Description *</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="mt-2"
-              />
-            </div>
-
+            <div><Label>Quiz Title</Label><Input value={quiz.title} onChange={(e) => setQuiz((prev: any) => ({ ...prev, title: e.target.value }))} className="mt-2" /></div>
+            <div><Label>Description</Label><Textarea value={quiz.description} onChange={(e) => setQuiz((prev: any) => ({ ...prev, description: e.target.value }))} className="mt-2" rows={4} /></div>
             <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <Label>Time Limit (minutes)</Label>
-                <Input
-                  type="number"
-                  value={timeLimit}
-                  onChange={(e) => setTimeLimit(e.target.value)}
-                  className="mt-2"
-                />
-              </div>
-
-              <div>
-                <Label>Difficulty</Label>
-                <Select value={difficulty} onValueChange={setDifficulty}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">Easy</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>Topic</Label>
-                <Select defaultValue={existing.topic}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tags.filter((t) => t.category === 'topic').map((tag) => (
-                      <SelectItem key={tag.id} value={tag.name}>
-                        {tag.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <div><Label>Time Limit Per Attempt (seconds)</Label><Input type="number" value={quiz.time_limit} onChange={(e) => setQuiz((prev: any) => ({ ...prev, time_limit: e.target.value }))} className="mt-2" /></div>
+              <div><Label>Total Quiz Points</Label><Input type="number" value={quiz.total_points} onChange={(e) => setQuiz((prev: any) => ({ ...prev, total_points: e.target.value }))} className="mt-2" /></div>
+              <div><Label>Difficulty</Label><Select value={quiz.difficulty} onValueChange={(value) => setQuiz((prev: any) => ({ ...prev, difficulty: value }))}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EASY">Easy</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HARD">Hard</SelectItem></SelectContent></Select></div>
             </div>
-
-            <div>
-              <Label>Tags</Label>
-              <div className="mt-2 p-4 border border-gray-200 rounded-lg">
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {selectedTags.map((tag) => (
-                    <Badge key={tag} className="px-3 py-1">
-                      {tag}
-                      <button type="button" onClick={() => toggleTag(tag)} className="ml-2">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
+            <div className="grid md:grid-cols-3 gap-4">
+              <div><Label>Topic</Label><Input value={quiz.topic || ''} onChange={(e) => setQuiz((prev: any) => ({ ...prev, topic: e.target.value }))} className="mt-2" /></div>
+              <div><Label>Available From</Label><Input type="datetime-local" value={quiz.available_from || ''} onChange={(e) => setQuiz((prev: any) => ({ ...prev, available_from: e.target.value }))} className="mt-2" /></div>
+              <div><Label>Available Until</Label><Input type="datetime-local" value={quiz.available_until || ''} onChange={(e) => setQuiz((prev: any) => ({ ...prev, available_until: e.target.value }))} className="mt-2" /></div>
+            </div>
+            <div><Label>Tags</Label><div className="mt-2 flex flex-wrap gap-2">{tags.map((tag) => <Badge key={tag.id} variant={(quiz.tag_ids || []).includes(tag.id) ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setQuiz((prev: any) => ({ ...prev, tag_ids: (prev.tag_ids || []).includes(tag.id) ? prev.tag_ids.filter((item: string) => item !== tag.id) : [...(prev.tag_ids || []), tag.id] }))}>{tag.name}</Badge>)}</div></div>
+            <div className="border-t pt-4 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div><Label>Attempt Mode</Label><Select value={quiz.attempt_mode} onValueChange={(value) => setQuiz((prev: any) => ({ ...prev, attempt_mode: value }))}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="SINGLE">Single attempt</SelectItem><SelectItem value="MULTIPLE">Multiple attempts</SelectItem></SelectContent></Select></div>
+                {quiz.attempt_mode === 'MULTIPLE' && <div><Label>Retry Score Mode</Label><Select value={quiz.retry_score_mode} onValueChange={(value) => setQuiz((prev: any) => ({ ...prev, retry_score_mode: value }))}><SelectTrigger className="mt-2"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="FULL">Full points on retry</SelectItem><SelectItem value="REDUCED">Reduced points on retry</SelectItem><SelectItem value="ZERO">Zero points on retry</SelectItem></SelectContent></Select></div>}
+              </div>
+              {quiz.attempt_mode === 'MULTIPLE' && quiz.retry_score_mode === 'REDUCED' && (
+                <div><Label>Retry Penalty Percent</Label><Input type="number" min="0" max="100" value={quiz.retry_penalty_percent} onChange={(e) => setQuiz((prev: any) => ({ ...prev, retry_penalty_percent: e.target.value }))} className="mt-2" /></div>
+              )}
+              {quiz.attempt_mode === 'MULTIPLE' && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="count-once">Count quiz points only once</Label>
+                    <p className="text-sm text-gray-500 mt-1">Leaderboard/profile points will only count once for this quiz.</p>
+                  </div>
+                  <Switch id="count-once" checked={Boolean(quiz.count_points_once)} onCheckedChange={(value) => setQuiz((prev: any) => ({ ...prev, count_points_once: value }))} />
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <Badge
-                      key={tag.id}
-                      variant={selectedTags.includes(tag.name) ? 'default' : 'secondary'}
-                      className="cursor-pointer"
-                      onClick={() => toggleTag(tag.name)}
-                    >
-                      {tag.name}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
-
-            <div className="flex items-center justify-between pt-4 border-t">
-              <div>
-                <Label htmlFor="reward">Reward Quiz</Label>
-                <p className="text-xs text-gray-500">Offer prizes for top performers</p>
-              </div>
-              <Switch id="reward" checked={hasReward} onCheckedChange={setHasReward} />
-            </div>
-
-            {hasReward && (
-              <div>
-                <Label htmlFor="rewardDesc">Reward Description</Label>
-                <Input
-                  id="rewardDesc"
-                  value={rewardDescription}
-                  onChange={(e) => setRewardDescription(e.target.value)}
-                  className="mt-2"
-                />
-              </div>
-            )}
+            <div className="flex items-center justify-between"><Label htmlFor="reward">Reward Quiz</Label><Switch id="reward" checked={Boolean(quiz.has_reward)} onCheckedChange={(value) => setQuiz((prev: any) => ({ ...prev, has_reward: value }))} /></div>
+            {quiz.has_reward && <div><Label>Reward Description</Label><Input value={quiz.reward_description || ''} onChange={(e) => setQuiz((prev: any) => ({ ...prev, reward_description: e.target.value }))} className="mt-2" /></div>}
           </div>
 
-          {/* Questions */}
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-lg">Questions ({questions.length})</h3>
-              <Button onClick={addQuestion} variant="outline">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Question
-              </Button>
-            </div>
-
+            <div className="flex items-center justify-between mb-6"><h3 className="font-semibold text-lg">Questions ({quiz.questions?.length || 0})</h3><Button onClick={() => setQuiz((prev: any) => ({ ...prev, questions: [...(prev.questions || []), createQuestion()] }))} variant="outline"><Plus className="w-4 h-4 mr-2" />Add Question</Button></div>
             <div className="space-y-6">
-              {questions.map((question, qIndex) => (
+              {(quiz.questions || []).map((question: any, qIndex: number) => (
                 <div key={question.id} className="border border-gray-200 rounded-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold">Question {qIndex + 1}</h4>
-                    <Button variant="ghost" size="sm" onClick={() => removeQuestion(question.id)}>
-                      <X className="w-4 h-4 text-red-500" />
-                    </Button>
-                  </div>
-
+                  <div className="flex items-center justify-between mb-4"><h4 className="font-semibold">Question {qIndex + 1}</h4><Button variant="ghost" size="sm" onClick={() => setQuiz((prev: any) => ({ ...prev, questions: prev.questions.filter((item: any) => item.id !== question.id) }))}><X className="w-4 h-4 text-red-500" /></Button></div>
                   <div className="space-y-4">
+                    <div><Label>Question Text</Label><Textarea value={question.question_text} onChange={(e) => updateQuestion(question.id, { question_text: e.target.value })} className="mt-2" rows={3} /></div>
+                    <div><Label>Explanation</Label><Textarea value={question.explanation || ''} onChange={(e) => updateQuestion(question.id, { explanation: e.target.value })} className="mt-2" rows={2} /></div>
                     <div>
-                      <Label>Question Text</Label>
-                      <Textarea
-                        value={question.question}
-                        onChange={(e) => updateQuestion(question.id, 'question', e.target.value)}
-                        className="mt-2"
-                        rows={3}
-                      />
+                      <Label>Question Image</Label>
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <label className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 ${uploadingQuestionId === question.id ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                          <Upload className="w-4 h-4" />
+                          {uploadingQuestionId === question.id ? 'Uploading...' : 'Upload Image'}
+                          <input type="file" accept="image/*" className="hidden" disabled={uploadingQuestionId === question.id} onChange={(e) => uploadQuestionImage(question.id, e.target.files?.[0] || null)} />
+                        </label>
+                        {question.question_image_url && <Button variant="outline" size="sm" onClick={() => updateQuestion(question.id, { question_image_url: '' })}><X className="w-4 h-4 mr-2" />Remove Image</Button>}
+                      </div>
+                      {question.question_image_url && <div className="mt-3 overflow-hidden rounded-lg border border-gray-200"><img src={question.question_image_url} alt={`Question ${qIndex + 1}`} className="max-h-64 w-full object-contain bg-gray-50" /></div>}
+                      {!question.question_image_url && <div className="mt-3 flex items-center gap-2 text-sm text-gray-500"><ImageIcon className="w-4 h-4" />No image uploaded</div>}
                     </div>
-
-                    <div>
-                      <Label>Answer Options</Label>
-                      <RadioGroup
-                        value={question.correctAnswer.toString()}
-                        onValueChange={(value) =>
-                          updateQuestion(question.id, 'correctAnswer', parseInt(value))
-                        }
-                        className="mt-2 space-y-2"
-                      >
-                        {question.options.map((option, optIndex) => (
-                          <div key={optIndex} className="flex items-center gap-3">
-                            <RadioGroupItem
-                              value={optIndex.toString()}
-                              id={`q${question.id}-opt${optIndex}`}
-                            />
-                            <Input
-                              value={option}
-                              onChange={(e) => updateOption(question.id, optIndex, e.target.value)}
-                              className="flex-1"
-                            />
-                            <Label
-                              htmlFor={`q${question.id}-opt${optIndex}`}
-                              className="text-xs text-green-600 w-16"
-                            >
-                              {question.correctAnswer === optIndex && '✓ Correct'}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    </div>
-
-                    <div>
-                      <Label>Explanation</Label>
-                      <Textarea
-                        value={question.explanation}
-                        onChange={(e) => updateQuestion(question.id, 'explanation', e.target.value)}
-                        className="mt-2"
-                        rows={2}
-                      />
-                    </div>
+                    <RadioGroup value={String((question.options || []).findIndex((option: any) => option.is_correct))} onValueChange={(value) => setCorrectOption(question.id, Number(value))} className="space-y-2">
+                      {(question.options || []).map((option: any, optIndex: number) => (
+                        <div key={option.id} className="flex items-center gap-3">
+                          <RadioGroupItem value={String(optIndex)} id={`${question.id}-${optIndex}`} />
+                          <Input value={option.option_text} onChange={(e) => updateOptionText(question.id, option.id, e.target.value)} className="flex-1" />
+                        </div>
+                      ))}
+                    </RadioGroup>
                   </div>
                 </div>
               ))}
-
-              {questions.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <p className="mb-4">No questions yet</p>
-                  <Button onClick={addQuestion}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add First Question
-                  </Button>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <h3 className="font-semibold mb-4">Actions</h3>
             <div className="space-y-3">
-              <Button onClick={() => handleSave(true)} className="w-full">
-                Save & Publish
-              </Button>
-              <Button onClick={() => handleSave(false)} variant="outline" className="w-full">
-                Save as Draft
-              </Button>
-              <Link to="/admin/quizzes">
-                <Button variant="ghost" className="w-full text-red-600 hover:text-red-700">
-                  Cancel
-                </Button>
-              </Link>
+              <Button onClick={() => save(true)} className="w-full">Save & Publish</Button>
+              <Button onClick={() => save(false)} variant="outline" className="w-full">Save as Draft</Button>
             </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h3 className="font-semibold mb-4">Quiz Summary</h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total Questions</span>
-                <span className="font-semibold">{questions.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Completed</span>
-                <span className="font-semibold">
-                  {questions.filter((q) => q.question && q.explanation).length}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Time Limit</span>
-                <span className="font-semibold">{timeLimit} min</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Difficulty</span>
-                <span className="font-semibold capitalize">{difficulty}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Has Reward</span>
-                <span className="font-semibold">{hasReward ? 'Yes' : 'No'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-blue-50 rounded-xl p-4 text-sm text-blue-900 border border-blue-200">
-            <p className="font-semibold mb-1">Current Status</p>
-            <p>
-              This quiz is currently{' '}
-              <span className={existing.status === 'published' ? 'text-green-700 font-semibold' : 'text-gray-600 font-semibold'}>
-                {existing.status}
-              </span>
-              .
-            </p>
-            <p className="mt-1 text-xs">
-              {existing.participants.toLocaleString()} participants have taken this quiz.
-            </p>
           </div>
         </div>
       </div>

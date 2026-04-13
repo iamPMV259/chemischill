@@ -36,6 +36,20 @@ class RefreshResponse(BaseModel):
     access_token: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # ─── User ─────────────────────────────────────────────────────────────────────
 
 class UserStats(BaseModel):
@@ -82,15 +96,23 @@ class UpdateUserStatusRequest(BaseModel):
     status: str
 
 
+class TeacherContactRequest(BaseModel):
+    sender_name: str
+    sender_email: EmailStr
+    message: str
+
+
 # ─── Tag ──────────────────────────────────────────────────────────────────────
 
 class CreateTagRequest(BaseModel):
     name: str
+    name_vi: str
     category: str
 
 
 class UpdateTagRequest(BaseModel):
     name: str | None = None
+    name_vi: str | None = None
     category: str | None = None
 
 
@@ -132,6 +154,13 @@ class CreateQuizRequest(BaseModel):
     topic: str | None = None
     time_limit: int
     difficulty: str = "MEDIUM"
+    total_points: int = 100
+    attempt_mode: str = "SINGLE"
+    retry_score_mode: str = "ZERO"
+    retry_penalty_percent: int = 50
+    count_points_once: bool = True
+    available_from: datetime | None = None
+    available_until: datetime | None = None
     has_reward: bool = False
     reward_description: str | None = None
     tag_ids: list[str] = []
@@ -145,6 +174,13 @@ class UpdateQuizRequest(BaseModel):
     topic: str | None = None
     time_limit: int | None = None
     difficulty: str | None = None
+    total_points: int | None = None
+    attempt_mode: str | None = None
+    retry_score_mode: str | None = None
+    retry_penalty_percent: int | None = None
+    count_points_once: bool | None = None
+    available_from: datetime | None = None
+    available_until: datetime | None = None
     has_reward: bool | None = None
     reward_description: str | None = None
     tag_ids: list[str] | None = None

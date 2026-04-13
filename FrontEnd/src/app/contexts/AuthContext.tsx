@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authService } from '../../services/auth';
+import { usersService } from '../../services/users';
+import { adaptUser } from '../../lib/adapters';
 
 interface User {
   id: string;
@@ -9,6 +12,7 @@ interface User {
   birthYear?: string;
   school?: string;
   phone?: string;
+  role: 'USER' | 'ADMIN';
 }
 
 interface AuthContextType {
@@ -25,55 +29,55 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
 
-  // Load user from localStorage on mount
+  // On mount: validate token by fetching fresh user data
   useEffect(() => {
-    const savedUser = localStorage.getItem('chemischill_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    const token = localStorage.getItem('chemischill_token');
+    if (!token) return;
+
+    usersService.getMe()
+      .then((res) => {
+        const adapted = adaptUser(res.data) as User;
+        setUser(adapted);
+        localStorage.setItem('chemischill_user', JSON.stringify(adapted));
+      })
+      .catch(() => {
+        localStorage.removeItem('chemischill_token');
+        localStorage.removeItem('chemischill_user');
+        setUser(null);
+      });
   }, []);
 
   const login = async (email: string, password: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // For demo purposes, create a mock user
-    const mockUser: User = {
-      id: '1',
-      username: email.split('@')[0],
-      email: email,
-      fullName: 'Demo User',
-      avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + email,
-    };
-
-    setUser(mockUser);
-    localStorage.setItem('chemischill_user', JSON.stringify(mockUser));
+    const res = await authService.login(email, password);
+    const { access_token, user: apiUser } = res.data;
+    localStorage.setItem('chemischill_token', access_token);
+    const adapted = adaptUser(apiUser) as User;
+    setUser(adapted);
+    localStorage.setItem('chemischill_user', JSON.stringify(adapted));
   };
 
   const register = async (username: string, email: string, password: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // Create new user
-    const newUser: User = {
-      id: Date.now().toString(),
-      username: username,
-      email: email,
-      avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + username,
-    };
-
-    setUser(newUser);
-    localStorage.setItem('chemischill_user', JSON.stringify(newUser));
+    const res = await authService.register(username, email, password);
+    const { access_token, user: apiUser } = res.data;
+    localStorage.setItem('chemischill_token', access_token);
+    const adapted = adaptUser(apiUser) as User;
+    setUser(adapted);
+    localStorage.setItem('chemischill_user', JSON.stringify(adapted));
   };
 
-  const logout = () => {
-    setUser(null);
+  const logout = async () => {
+    try {
+      await authService.logout();
+    } catch {
+      // ignore errors on logout
+    }
+    localStorage.removeItem('chemischill_token');
     localStorage.removeItem('chemischill_user');
+    setUser(null);
   };
 
   const updateProfile = (data: Partial<User>) => {
     if (!user) return;
-
     const updatedUser = { ...user, ...data };
     setUser(updatedUser);
     localStorage.setItem('chemischill_user', JSON.stringify(updatedUser));

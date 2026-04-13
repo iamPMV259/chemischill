@@ -85,6 +85,7 @@ async def create_question(
 async def create_answer(
     question_id: str,
     content: str = Form(...),
+    reply_to_answer_id: str | None = Form(default=None),
     images: list[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -93,7 +94,7 @@ async def create_answer(
     if len(valid_images) > 3:
         raise HTTPException(status_code=400, detail="Max 3 images allowed")
     try:
-        return await CommunityService().create_answer(db, current_user.id, question_id, content, valid_images)
+        return await CommunityService().create_answer(db, current_user.id, question_id, content, valid_images, reply_to_answer_id)
     except BaseAppException as e:
         raise _map_exc(e)
 
@@ -175,6 +176,19 @@ async def request_revision(
         return await CommunityService().admin_review_question(db, question_id, admin.id, "REVISION_REQUESTED", body.admin_note)
     except BaseAppException as e:
         raise _map_exc(e)
+
+
+@router.delete("/admin/community/questions/{question_id}")
+async def admin_delete_question(
+    question_id: str,
+    _admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await CommunityService().admin_delete_question(db, question_id)
+    except BaseAppException as e:
+        raise _map_exc(e)
+    return {"message": "Question deleted"}
 
 
 @router.get("/admin/stats")

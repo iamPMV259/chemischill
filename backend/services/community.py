@@ -10,7 +10,7 @@ from database.models import (
     QuestionStatusEnum, Document, Quiz, QuizSubmission, User,
 )
 from hooks.error import NotFoundError, ValidationError
-from utils.storage import upload_to_cloudinary
+from utils.storage import upload_to_cloudinary, delete_from_cloudinary
 from .base_singleton import SingletonMeta
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,26 @@ _QUESTION_OPTIONS = [
     selectinload(CommunityQuestion.images),
     selectinload(CommunityQuestion.answers),
 ]
+
+
+def _answer_to_dict(a: CommunityAnswer, upvoted_ids: set[str] | None = None, replies: list[dict] | None = None) -> dict:
+    upvoted_ids = upvoted_ids or set()
+    return {
+        "id": a.id,
+        "content": a.content,
+        "upvotes": a.upvotes,
+        "is_upvoted_by_me": a.id in upvoted_ids,
+        "created_at": a.created_at,
+        "reply_to_answer_id": a.reply_to_answer_id,
+        "user": {
+            "id": a.user.id,
+            "username": a.user.username,
+            "full_name": a.user.full_name,
+            "avatar_url": a.user.avatar_url,
+        },
+        "images": [{"image_url": img.image_url, "order_index": img.order_index} for img in a.images],
+        "replies": replies or [],
+    }
 
 
 def _question_to_dict(q: CommunityQuestion, answer_count: int | None = None) -> dict:
@@ -39,7 +59,15 @@ def _question_to_dict(q: CommunityQuestion, answer_count: int | None = None) -> 
             "full_name": q.user.full_name,
             "avatar_url": q.user.avatar_url,
         },
-        "tags": [{"id": t.tag.id, "name": t.tag.name} for t in q.tags],
+        "tags": [
+            {
+                "id": t.tag.id,
+                "name": t.tag.name_vi or t.tag.name,
+                "name_vi": t.tag.name_vi or t.tag.name,
+                "name_en": t.tag.name,
+            }
+            for t in q.tags
+        ],
         "images": [{"image_url": img.image_url, "order_index": img.order_index} for img in q.images],
     }
 
@@ -105,10 +133,15 @@ class CommunityService(metaclass=SingletonMeta):
 
         query = (
             select(CommunityAnswer)
-            .where(CommunityAnswer.question_id == question_id)
+            .where(
+                CommunityAnswer.question_id == question_id,
+                CommunityAnswer.reply_to_answer_id.is_(None),
+            )
             .options(
                 selectinload(CommunityAnswer.user),
                 selectinload(CommunityAnswer.images),
+                selectinload(CommunityAnswer.replies).selectinload(CommunityAnswer.user),
+                selectinload(CommunityAnswer.replies).selectinload(CommunityAnswer.images),
             )
         )
         if sort_by == "newest":
@@ -124,25 +157,23 @@ class CommunityService(metaclass=SingletonMeta):
 
         upvoted_ids: set[str] = set()
         if current_user_id and answers:
+            answer_ids = []
+            for answer in answers:
+                answer_ids.append(answer.id)
+                answer_ids.extend(reply.id for reply in answer.replies)
             upvoted_result = await db.execute(
                 select(AnswerUpvote.answer_id).where(
                     AnswerUpvote.user_id == current_user_id,
-                    AnswerUpvote.answer_id.in_([a.id for a in answers]),
+                    AnswerUpvote.answer_id.in_(answer_ids),
                 )
             )
             upvoted_ids = {r.answer_id for r in upvoted_result.all()}
 
         result = []
         for a in answers:
-            result.append({
-                "id": a.id,
-                "content": a.content,
-                "upvotes": a.upvotes,
-                "is_upvoted_by_me": a.id in upvoted_ids,
-                "created_at": a.created_at,
-                "user": {"id": a.user.id, "username": a.user.username, "full_name": a.user.full_name, "avatar_url": a.user.avatar_url},
-                "images": [{"image_url": img.image_url, "order_index": img.order_index} for img in a.images],
-            })
+            sorted_replies = sorted(a.replies, key=lambda item: item.created_at)
+            reply_dicts = [_answer_to_dict(reply, upvoted_ids) for reply in sorted_replies]
+            result.append(_answer_to_dict(a, upvoted_ids, reply_dicts))
         return result, total
 
     async def create_question(
@@ -181,6 +212,7 @@ class CommunityService(metaclass=SingletonMeta):
         question_id: str,
         content: str,
         image_files: list[UploadFile],
+        reply_to_answer_id: str | None = None,
     ) -> dict:
         q_result = await db.execute(
             select(CommunityQuestion).where(
@@ -191,14 +223,32 @@ class CommunityService(metaclass=SingletonMeta):
         if not q_result.scalar_one_or_none():
             raise NotFoundError("Question not found")
 
-        answer = CommunityAnswer(question_id=question_id, user_id=user_id, content=content)
+        if reply_to_answer_id:
+            parent_result = await db.execute(
+                select(CommunityAnswer).where(
+                    CommunityAnswer.id == reply_to_answer_id,
+                    CommunityAnswer.question_id == question_id,
+                )
+            )
+            parent_answer = parent_result.scalar_one_or_none()
+            if not parent_answer:
+                raise NotFoundError("Parent answer not found")
+
+        answer = CommunityAnswer(
+            question_id=question_id,
+            user_id=user_id,
+            content=content,
+            reply_to_answer_id=reply_to_answer_id,
+        )
         db.add(answer)
         await db.flush()
 
+        uploaded_images: list[dict] = []
         for i, img_file in enumerate(image_files):
             data = await img_file.read()
             url, key = upload_to_cloudinary(data, "answer-images")
             db.add(CommunityAnswerImage(answer_id=answer.id, image_url=url, image_key=key, order_index=i))
+            uploaded_images.append({"image_url": url, "order_index": i})
 
         await db.commit()
         await db.refresh(answer)
@@ -212,8 +262,10 @@ class CommunityService(metaclass=SingletonMeta):
             "upvotes": answer.upvotes,
             "is_upvoted_by_me": False,
             "created_at": answer.created_at,
+            "reply_to_answer_id": answer.reply_to_answer_id,
             "user": {"id": user.id, "username": user.username, "full_name": user.full_name, "avatar_url": user.avatar_url} if user else {},
-            "images": [],
+            "images": uploaded_images,
+            "replies": [],
         }
 
     async def upvote_answer(self, db: AsyncSession, user_id: str, answer_id: str) -> dict:
@@ -295,6 +347,35 @@ class CommunityService(metaclass=SingletonMeta):
             q.admin_note = admin_note
         await db.commit()
         return {"id": q.id, "status": q.status.value, "reviewed_at": q.reviewed_at, "admin_note": q.admin_note}
+
+    async def admin_delete_question(self, db: AsyncSession, question_id: str) -> None:
+        result = await db.execute(
+            select(CommunityQuestion)
+            .where(CommunityQuestion.id == question_id)
+            .options(
+                selectinload(CommunityQuestion.images),
+                selectinload(CommunityQuestion.answers).selectinload(CommunityAnswer.images),
+            )
+        )
+        question = result.scalar_one_or_none()
+        if not question:
+            raise NotFoundError("Question not found")
+
+        for image in question.images:
+            try:
+                delete_from_cloudinary(image.image_key)
+            except Exception:
+                pass
+
+        for answer in question.answers:
+            for image in answer.images:
+                try:
+                    delete_from_cloudinary(image.image_key)
+                except Exception:
+                    pass
+
+        await db.delete(question)
+        await db.commit()
 
     async def get_admin_stats(self, db: AsyncSession) -> dict:
         total_docs = (await db.execute(select(func.count(Document.id)))).scalar() or 0

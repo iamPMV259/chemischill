@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ArrowLeft, Upload, X, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -7,41 +7,73 @@ import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Badge } from '../../components/ui/badge';
 import { motion } from 'motion/react';
-import { tags } from '../../data/mockData';
 import { toast } from 'sonner';
+import { communityService } from '../../../services/community';
+import { tagsService } from '../../../services/tags';
 
 export default function PostQuestionPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [images, setImages] = useState<string[]>([]);
+  const [tags, setTags] = useState<any[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const toggleTag = (tagName: string) => {
-    if (selectedTags.includes(tagName)) {
-      setSelectedTags(selectedTags.filter((t) => t !== tagName));
-    } else if (selectedTags.length < 5) {
-      setSelectedTags([...selectedTags, tagName]);
+  useEffect(() => {
+    tagsService.getTags().then((res) => setTags(res.data.data || [])).catch(() => {});
+  }, []);
+
+  const toggleTag = (tagId: string) => {
+    if (selectedTagIds.includes(tagId)) {
+      setSelectedTagIds(selectedTagIds.filter((id) => id !== tagId));
+    } else if (selectedTagIds.length < 5) {
+      setSelectedTagIds([...selectedTagIds, tagId]);
     }
   };
 
-  const handleImageUpload = () => {
-    // Simulate image upload
-    setImages([...images, 'https://images.unsplash.com/photo-1603126857599-f6e157fa2fe6?w=600&h=400&fit=crop']);
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const remaining = 3 - imageFiles.length;
+    const toAdd = files.slice(0, remaining);
+    setImageFiles([...imageFiles, ...toAdd]);
+    toAdd.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setImagePreviews((prev) => [...prev, ev.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const removeImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
+    setImageFiles(imageFiles.filter((_, i) => i !== index));
+    setImagePreviews(imagePreviews.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !description || selectedTags.length === 0) {
+    if (!title || !description || selectedTagIds.length === 0) {
       toast.error('Please fill in all required fields');
       return;
     }
-    toast.success('Question submitted for review!');
-    setTimeout(() => navigate('/community'), 1000);
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('content', description);
+      formData.append('tag_ids', JSON.stringify(selectedTagIds));
+      imageFiles.forEach((file) => formData.append('images', file));
+
+      await communityService.createQuestion(formData);
+      toast.success('Question submitted for review!');
+      setTimeout(() => navigate('/community'), 1000);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to submit question');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -82,7 +114,6 @@ export default function PostQuestionPage() {
               className="mt-2"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Be specific and clear about your question</p>
           </div>
 
           {/* Description */}
@@ -90,31 +121,24 @@ export default function PostQuestionPage() {
             <Label htmlFor="description">Detailed Description *</Label>
             <Textarea
               id="description"
-              placeholder="Provide all the details about your chemistry problem. Include what you've tried and where you're stuck..."
+              placeholder="Provide all the details about your chemistry problem..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={8}
               className="mt-2"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">
-              The more details you provide, the better answers you'll receive
-            </p>
           </div>
 
           {/* Image Upload */}
           <div>
             <Label>Attach Images (Optional)</Label>
             <div className="mt-2">
-              {images.length > 0 && (
+              {imagePreviews.length > 0 && (
                 <div className="grid grid-cols-3 gap-4 mb-4">
-                  {images.map((img, index) => (
+                  {imagePreviews.map((preview, index) => (
                     <div key={index} className="relative group">
-                      <img
-                        src={img}
-                        alt={`Upload ${index + 1}`}
-                        className="w-full h-32 object-cover rounded-lg"
-                      />
+                      <img src={preview} alt={`Upload ${index + 1}`} className="w-full h-32 object-cover rounded-lg" />
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
@@ -126,18 +150,19 @@ export default function PostQuestionPage() {
                   ))}
                 </div>
               )}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleImageUpload}
-                disabled={images.length >= 3}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Image {images.length > 0 && `(${images.length}/3)`}
-              </Button>
-              <p className="text-xs text-gray-500 mt-1">
-                Upload images of your problem, handwritten work, or diagrams (max 3 images)
-              </p>
+              <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 ${imageFiles.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                <Upload className="w-4 h-4" />
+                Upload Image {imageFiles.length > 0 && `(${imageFiles.length}/3)`}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleImageChange}
+                  disabled={imageFiles.length >= 3}
+                />
+              </label>
+              <p className="text-xs text-gray-500 mt-1">Upload images of your problem (max 3 images)</p>
             </div>
           </div>
 
@@ -146,53 +171,41 @@ export default function PostQuestionPage() {
             <Label>Select Topics * (Max 5)</Label>
             <div className="mt-2 p-4 border border-gray-200 rounded-lg">
               <div className="flex flex-wrap gap-2 mb-4">
-                {selectedTags.map((tag) => (
-                  <Badge key={tag} className="px-3 py-1">
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() => toggleTag(tag)}
-                      className="ml-2 hover:text-red-200"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </Badge>
-                ))}
-                {selectedTags.length === 0 && (
-                  <p className="text-sm text-gray-500">No topics selected</p>
-                )}
+                {selectedTagIds.map((tagId) => {
+                  const tag = tags.find((t) => t.id === tagId);
+                  return tag ? (
+                    <Badge key={tagId} className="px-3 py-1">
+                      {tag.name}
+                      <button type="button" onClick={() => toggleTag(tagId)} className="ml-2 hover:text-red-200">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ) : null;
+                })}
+                {selectedTagIds.length === 0 && <p className="text-sm text-gray-500">No topics selected</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
                   <Badge
                     key={tag.id}
-                    variant={selectedTags.includes(tag.name) ? 'default' : 'secondary'}
+                    variant={selectedTagIds.includes(tag.id) ? 'default' : 'secondary'}
                     className="cursor-pointer"
-                    onClick={() => toggleTag(tag.name)}
+                    onClick={() => toggleTag(tag.id)}
                   >
                     {tag.name}
                   </Badge>
                 ))}
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Select up to 5 topics that best describe your question
-            </p>
           </div>
 
           {/* Submit */}
           <div className="flex gap-3 pt-4">
             <Link to="/community" className="flex-1">
-              <Button type="button" variant="outline" className="w-full">
-                Cancel
-              </Button>
+              <Button type="button" variant="outline" className="w-full">Cancel</Button>
             </Link>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={!title || !description || selectedTags.length === 0}
-            >
-              Submit Question
+            <Button type="submit" className="flex-1" disabled={!title || !description || selectedTagIds.length === 0 || submitting}>
+              {submitting ? 'Đang gửi...' : 'Submit Question'}
             </Button>
           </div>
         </form>

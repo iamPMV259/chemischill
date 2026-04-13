@@ -1,14 +1,88 @@
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router';
-import { Download, Eye, Calendar, FileText, ArrowLeft, Star } from 'lucide-react';
+import { Download, Eye, Calendar, FileText, ArrowLeft, Star, ExternalLink } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { motion } from 'motion/react';
-import { documents } from '../../data/mockData';
 import { toast } from 'sonner';
+import { documentsService } from '../../../services/documents';
+import { useAuth } from '../../contexts/AuthContext';
+import { adaptDocument } from '../../../lib/adapters';
 
 export default function DocumentDetailPage() {
   const { id } = useParams();
-  const doc = documents.find((d) => d.id === id);
+  const [doc, setDoc] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const { isAuthenticated } = useAuth();
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    Promise.all([
+      documentsService.getDocument(id),
+      documentsService.incrementView(id).catch(() => {}),
+    ])
+      .then(([res]) => {
+        setDoc(adaptDocument(res.data));
+      })
+      .catch(() => setDoc(null))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  const handleDownload = async () => {
+    if (!id) return;
+    try {
+      const res = await documentsService.getDownloadUrl(id);
+      window.open(res.data.download_url, '_blank');
+    } catch {
+      toast.error('Download failed. Please try again.');
+    }
+  };
+
+  const scrollToPreview = () => {
+    previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const saveDocument = async () => {
+    if (!id) return;
+    if (!isAuthenticated) {
+      toast.error('Bạn cần đăng nhập để lưu tài liệu');
+      return;
+    }
+    try {
+      await documentsService.saveDocument(id);
+      toast.success('Đã lưu tài liệu');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Không thể lưu tài liệu');
+    }
+  };
+
+  const fileType = doc?.fileType?.toUpperCase?.() ?? '';
+  const rawPreviewUrl = doc?.previewUrl || doc?.fileUrl || '';
+  const encodedPreviewUrl = rawPreviewUrl ? encodeURIComponent(rawPreviewUrl) : '';
+  const previewMode =
+    fileType === 'PDF'
+      ? 'pdf'
+      : fileType === 'DOC' || fileType === 'DOCX'
+        ? 'office'
+        : 'unsupported';
+  const embeddedPreviewUrl =
+    previewMode === 'pdf'
+      ? rawPreviewUrl
+      : previewMode === 'office'
+        ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodedPreviewUrl}`
+        : '';
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-1/3" />
+          <div className="h-64 bg-gray-200 rounded" />
+        </div>
+      </div>
+    );
+  }
 
   if (!doc) {
     return (
@@ -20,14 +94,6 @@ export default function DocumentDetailPage() {
       </div>
     );
   }
-
-  const relatedDocs = documents.filter(
-    (d) => d.id !== doc.id && d.tags.some((tag) => doc.tags.includes(tag))
-  ).slice(0, 3);
-
-  const handleDownload = () => {
-    toast.success('Download started!');
-  };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
@@ -65,7 +131,7 @@ export default function DocumentDetailPage() {
             </div>
 
             <div className="flex flex-wrap gap-2 mb-6">
-              {doc.tags.map((tag) => (
+              {doc.tags.map((tag: string) => (
                 <Badge key={tag} variant="secondary">
                   {tag}
                 </Badge>
@@ -98,28 +164,67 @@ export default function DocumentDetailPage() {
                   Tải Xuống Tài Liệu
                 </Button>
               ) : (
-                <Button size="lg" className="flex-1" variant="outline">
+                <Button size="lg" className="flex-1" variant="outline" onClick={scrollToPreview}>
                   <Eye className="w-5 h-5 mr-2" />
                   Chỉ Xem Trước
                 </Button>
               )}
-              <Button size="lg" variant="outline">
-                <Star className="w-5 h-5 mr-2" />
-                Lưu
+              <Button size="lg" variant="outline" onClick={saveDocument}>
+                  <Star className="w-5 h-5 mr-2" />
+                  Lưu
               </Button>
             </div>
           </div>
 
           {/* Document Preview */}
-          <div className="bg-white rounded-2xl shadow-lg p-8">
+          <div ref={previewRef} className="bg-white rounded-2xl shadow-lg p-8">
             <h2 className="text-2xl font-bold mb-6">Xem Trước Tài Liệu</h2>
-            <div className="bg-gray-100 rounded-xl aspect-[8.5/11] flex items-center justify-center">
-              <div className="text-center text-gray-500">
-                <FileText className="w-16 h-16 mx-auto mb-3" />
-                <p>Khu Vực Xem Trước PDF</p>
-                <p className="text-sm mt-2">Tải xuống để xem tài liệu đầy đủ</p>
+            {embeddedPreviewUrl ? (
+              <div className="space-y-4">
+                <div className="h-[900px] overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                  <iframe
+                    src={embeddedPreviewUrl}
+                    title={`preview-${doc.title}`}
+                    className="h-full w-full"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Button variant="outline" asChild>
+                    <a href={rawPreviewUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Mở Bản Xem Trước
+                    </a>
+                  </Button>
+                  {doc.allowDownload && (
+                    <Button onClick={handleDownload}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Tải Xuống
+                    </Button>
+                  )}
+                </div>
+                {previewMode === 'office' && (
+                  <p className="text-sm text-gray-500">
+                    File Word được nhúng qua Office Web Viewer. Nếu preview lỗi, hãy mở ở tab mới hoặc tải xuống.
+                  </p>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="bg-gray-100 rounded-xl aspect-[8.5/11] flex items-center justify-center">
+                <div className="text-center text-gray-500 max-w-md px-6">
+                  <FileText className="w-16 h-16 mx-auto mb-3" />
+                  <p>Định dạng này hiện chưa hỗ trợ xem trước trực tiếp.</p>
+                  <p className="text-sm mt-2">Bạn có thể mở file ở tab mới hoặc tải xuống để xem đầy đủ.</p>
+                  {rawPreviewUrl && (
+                    <Button variant="outline" className="mt-4" asChild>
+                      <a href={rawPreviewUrl} target="_blank" rel="noreferrer">
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Mở File
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -160,36 +265,6 @@ export default function DocumentDetailPage() {
               </div>
             </div>
           </div>
-
-          {/* Related Documents */}
-          {relatedDocs.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h3 className="font-semibold text-lg mb-4">Tài Liệu Liên Quan</h3>
-              <div className="space-y-4">
-                {relatedDocs.map((relDoc) => (
-                  <Link key={relDoc.id} to={`/documents/${relDoc.id}`}>
-                    <div className="group cursor-pointer">
-                      <div className="flex gap-3">
-                        <img
-                          src={relDoc.thumbnail}
-                          alt={relDoc.title}
-                          className="w-20 h-20 rounded-lg object-cover"
-                        />
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-sm mb-1 line-clamp-2 group-hover:text-blue-600">
-                            {relDoc.title}
-                          </h4>
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <span>{relDoc.downloads.toLocaleString()} downloads</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
         </motion.div>
       </div>
     </div>

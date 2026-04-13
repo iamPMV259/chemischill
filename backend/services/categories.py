@@ -59,6 +59,9 @@ class CategoriesService(metaclass=SingletonMeta):
         if not cat:
             raise NotFoundError("Category not found")
         await db.execute(
+            update(Category).where(Category.parent_id == cat_id).values(parent_id=None)
+        )
+        await db.execute(
             update(Document).where(Document.category_id == cat_id).values(category_id=None)
         )
         await db.delete(cat)

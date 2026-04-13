@@ -142,13 +142,9 @@ export default function LoginPage() {
                   <Label htmlFor="password">
                     {language === 'vi' ? 'Mật Khẩu' : 'Password'}
                   </Label>
-                  <button
-                    type="button"
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={() => toast.info(language === 'vi' ? 'Tính năng sắp ra mắt' : 'Coming soon')}
-                  >
+                  <Link to="/forgot-password" className="text-xs text-blue-600 hover:underline">
                     {language === 'vi' ? 'Quên mật khẩu?' : 'Forgot password?'}
-                  </button>
+                  </Link>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />

@@ -1,18 +1,43 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { Search, BookOpen, Brain, MessageCircle, Trophy, TrendingUp, Star, Users } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { motion } from 'motion/react';
-import { documents, quizzes, tags, leaderboardUsers } from '../../data/mockData';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { documentsService } from '../../../services/documents';
+import { quizzesService } from '../../../services/quizzes';
+import { tagsService } from '../../../services/tags';
+import { usersService } from '../../../services/users';
+import { adaptDocument, adaptQuiz, adaptLeaderboardEntry } from '../../../lib/adapters';
 
 export default function HomePage() {
   const { t } = useLanguage();
-  const featuredDocs = documents.filter((doc) => doc.featured).slice(0, 3);
-  const trendingQuizzes = quizzes.slice(0, 3);
-  const topUsers = leaderboardUsers.slice(0, 3);
-  const popularTags = tags.slice(0, 6);
+  const [featuredDocs, setFeaturedDocs] = useState<any[]>([]);
+  const [trendingQuizzes, setTrendingQuizzes] = useState<any[]>([]);
+  const [topUsers, setTopUsers] = useState<any[]>([]);
+  const [popularTags, setPopularTags] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      documentsService.getFeaturedDocuments(),
+      quizzesService.getFeaturedQuizzes(),
+      tagsService.getTags(),
+      usersService.getLeaderboard({ limit: 3 }),
+    ])
+      .then(([docsRes, quizzesRes, tagsRes, lbRes]) => {
+        setFeaturedDocs((docsRes.data.data || []).slice(0, 3).map(adaptDocument));
+        setTrendingQuizzes((quizzesRes.data.data || []).slice(0, 3).map(adaptQuiz));
+        setPopularTags((tagsRes.data.data || []).slice(0, 6));
+        setTopUsers((lbRes.data.data || []).map(adaptLeaderboardEntry));
+      })
+      .catch(() => {
+        // silently fail — show empty state
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <div>
@@ -110,49 +135,57 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
-          {featuredDocs.map((doc, index) => (
-            <motion.div
-              key={doc.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-            >
-              <Link to={`/documents/${doc.id}`}>
-                <div className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 group">
-                  <div className="relative h-48 overflow-hidden">
-                    <img
-                      src={doc.thumbnail}
-                      alt={doc.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute top-3 right-3">
-                      <Badge className="bg-orange-500 text-white">
-                        <Star className="w-3 h-3 mr-1" />
-                        {t('featuredDocs.featured')}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="p-5">
-                    <h3 className="font-semibold text-lg mb-2 line-clamp-2">{doc.title}</h3>
-                    <p className="text-sm text-gray-600 mb-4 line-clamp-2">{doc.description}</p>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {doc.tags.slice(0, 2).map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">
-                          {tag}
+        {loading ? (
+          <div className="grid md:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-gray-100 rounded-xl h-64 animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-3 gap-6">
+            {featuredDocs.map((doc, index) => (
+              <motion.div
+                key={doc.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+              >
+                <Link to={`/documents/${doc.id}`}>
+                  <div className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 group">
+                    <div className="relative h-48 overflow-hidden">
+                      <img
+                        src={doc.thumbnail}
+                        alt={doc.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute top-3 right-3">
+                        <Badge className="bg-orange-500 text-white">
+                          <Star className="w-3 h-3 mr-1" />
+                          {t('featuredDocs.featured')}
                         </Badge>
-                      ))}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-sm text-gray-500">
-                      <span>{doc.views.toLocaleString()} {t('featuredDocs.views')}</span>
-                      <span>{doc.downloads.toLocaleString()} {t('featuredDocs.downloads')}</span>
+                    <div className="p-5">
+                      <h3 className="font-semibold text-lg mb-2 line-clamp-2">{doc.title}</h3>
+                      <p className="text-sm text-gray-600 mb-4 line-clamp-2">{doc.description}</p>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {doc.tags.slice(0, 2).map((tag: string) => (
+                          <Badge key={tag} variant="secondary" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <span>{doc.views.toLocaleString()} {t('featuredDocs.views')}</span>
+                        <span>{doc.downloads.toLocaleString()} {t('featuredDocs.downloads')}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Trending Quizzes */}
@@ -188,7 +221,7 @@ export default function HomePage() {
                   <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
                     <span>{quiz.questionCount} {t('quizzes.questions')}</span>
                     <span>•</span>
-                    <span>{quiz.timeLimit} {t('quizzes.minutes')}</span>
+                    <span>{Math.round(quiz.timeLimit / 60)} {t('quizzes.minutes')}</span>
                     <span>•</span>
                     <Badge
                       variant={
@@ -225,7 +258,7 @@ export default function HomePage() {
             <h2 className="text-3xl font-bold mb-2">{t('leaderboard.title')}</h2>
             <p className="text-gray-600">{t('leaderboard.subtitle')}</p>
           </div>
-          <Link to="/quizzes">
+          <Link to="/leaderboard">
             <Button variant="outline">{t('leaderboard.viewFull')}</Button>
           </Link>
         </div>

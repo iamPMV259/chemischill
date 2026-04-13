@@ -1,4 +1,5 @@
-import { Outlet, Link, useLocation } from 'react-router';
+import { Outlet, Link, useLocation, Navigate } from 'react-router';
+import { useAuth } from '../contexts/AuthContext';
 import {
   LayoutDashboard,
   FileText,
@@ -21,6 +22,11 @@ import {
 } from '../components/ui/dropdown-menu';
 
 export default function AdminLayout() {
+  const { isAuthenticated, user } = useAuth();
+  if (!isAuthenticated || user?.role !== 'ADMIN') {
+    return <Navigate to="/login" />;
+  }
+
   const location = useLocation();
   const { language, setLanguage, t } = useLanguage();
 

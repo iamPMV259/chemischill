@@ -14,28 +14,40 @@ def _map_exc(e: BaseAppException) -> HTTPException:
     return HTTPException(status_code=e.status_code, detail=e.message)
 
 
+def _tag_out(tag) -> dict:
+    name_en = tag.name
+    name_vi = tag.name_vi or tag.name
+    return {
+        "id": tag.id,
+        "name": name_vi,
+        "name_vi": name_vi,
+        "name_en": name_en,
+        "category": tag.category.value,
+    }
+
+
 @router.get("/tags")
 async def get_tags(db: AsyncSession = Depends(get_db)):
     tags = await TagsService().get_all_tags(db)
-    return {"data": [{"id": t.id, "name": t.name, "category": t.category.value} for t in tags]}
+    return {"data": [_tag_out(t) for t in tags]}
 
 
 @router.post("/admin/tags", status_code=201)
 async def create_tag(body: CreateTagRequest, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
     try:
-        tag = await TagsService().create_tag(db, body.name, body.category)
+        tag = await TagsService().create_tag(db, body.name, body.name_vi, body.category)
     except BaseAppException as e:
         raise _map_exc(e)
-    return {"id": tag.id, "name": tag.name, "category": tag.category.value, "created_at": tag.created_at}
+    return {**_tag_out(tag), "created_at": tag.created_at}
 
 
 @router.patch("/admin/tags/{tag_id}")
 async def update_tag(tag_id: str, body: UpdateTagRequest, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
     try:
-        tag = await TagsService().update_tag(db, tag_id, body.name, body.category)
+        tag = await TagsService().update_tag(db, tag_id, body.name, body.name_vi, body.category)
     except BaseAppException as e:
         raise _map_exc(e)
-    return {"id": tag.id, "name": tag.name, "category": tag.category.value}
+    return _tag_out(tag)
 
 
 @router.delete("/admin/tags/{tag_id}")
