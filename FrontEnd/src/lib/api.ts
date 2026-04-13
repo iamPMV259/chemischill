@@ -1,7 +1,25 @@
 import axios from 'axios';
 
+function getApiBaseUrl() {
+  const explicitUrl = import.meta.env.VITE_API_URL;
+  if (explicitUrl) return explicitUrl;
+
+  const apiDomain = import.meta.env.VITE_API_DOMAIN;
+  if (apiDomain) {
+    const protocol = import.meta.env.VITE_API_PROTOCOL || 'https';
+    return `${protocol}://${apiDomain}`;
+  }
+
+  const apiHost = import.meta.env.VITE_API_HOST || 'localhost';
+  const apiPort = import.meta.env.VITE_API_PORT || '8000';
+  const protocol = import.meta.env.VITE_API_PROTOCOL || 'http';
+  return `${protocol}://${apiHost}:${apiPort}`;
+}
+
+const apiBaseUrl = getApiBaseUrl();
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: apiBaseUrl,
   withCredentials: true, // send httpOnly refresh token cookie
 });
 
@@ -38,7 +56,7 @@ api.interceptors.response.use(
       refreshing = true;
       try {
         const res = await axios.post(
-          `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/refresh`,
+          `${apiBaseUrl}/auth/refresh`,
           {},
           { withCredentials: true }
         );
