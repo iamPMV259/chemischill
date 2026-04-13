@@ -1,5 +1,8 @@
 import axios from 'axios';
 
+const DEFAULT_PROD_API_URL = 'https://chemischill.onrender.com';
+const DEFAULT_DEV_API_URL = 'http://localhost:8000';
+
 function getApiBaseUrl() {
   const explicitUrl = import.meta.env.VITE_API_URL;
   if (explicitUrl) return explicitUrl;
@@ -13,7 +16,12 @@ function getApiBaseUrl() {
   const apiHost = import.meta.env.VITE_API_HOST || 'localhost';
   const apiPort = import.meta.env.VITE_API_PORT || '8000';
   const protocol = import.meta.env.VITE_API_PROTOCOL || 'http';
-  return `${protocol}://${apiHost}:${apiPort}`;
+
+  if (import.meta.env.PROD) {
+    return DEFAULT_PROD_API_URL;
+  }
+
+  return apiHost && apiPort ? `${protocol}://${apiHost}:${apiPort}` : DEFAULT_DEV_API_URL;
 }
 
 const apiBaseUrl = getApiBaseUrl();
