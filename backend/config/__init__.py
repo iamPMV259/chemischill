@@ -1,11 +1,28 @@
 import os
+
 import yaml
 from dotenv import load_dotenv
+
 from .models import RootConfig
 
 load_dotenv()
 
-_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app-config.yaml")
+_BACKEND_ROOT = os.path.dirname(os.path.dirname(__file__))
+_CONFIG_CANDIDATES = (
+    os.path.join(_BACKEND_ROOT, "app-config.yaml"),
+    os.path.join(_BACKEND_ROOT, "app-config-template.yaml"),
+)
+
+
+def _resolve_config_path() -> str:
+    for path in _CONFIG_CANDIDATES:
+        if os.path.exists(path):
+            return path
+
+    raise FileNotFoundError(
+        "No config file found. Expected one of: "
+        + ", ".join(_CONFIG_CANDIDATES)
+    )
 
 
 def _expand_vars(obj):
@@ -18,7 +35,7 @@ def _expand_vars(obj):
     return obj
 
 
-with open(_CONFIG_PATH, "r") as _f:
+with open(_resolve_config_path(), "r") as _f:
     _raw = yaml.safe_load(_f)
 
 _expanded = _expand_vars(_raw)
