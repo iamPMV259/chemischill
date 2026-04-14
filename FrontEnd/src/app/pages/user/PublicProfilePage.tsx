@@ -6,6 +6,7 @@ import { Badge } from '../../components/ui/badge';
 import { motion } from 'motion/react';
 import { usersService } from '../../../services/users';
 import { adaptCommunityQuestion } from '../../../lib/adapters';
+import { getDefaultAvatarUrl } from '../../../lib/env';
 
 export default function PublicProfilePage() {
   const { id } = useParams();
@@ -50,7 +51,7 @@ export default function PublicProfilePage() {
           <div className="px-8 pb-8">
             <div className="flex items-end gap-6 -mt-16 mb-6">
               <div className="relative">
-                <img src={user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`} alt={user.full_name || user.username} className="w-32 h-32 rounded-full border-4 border-white shadow-lg" />
+                <img src={user.avatar_url || getDefaultAvatarUrl(user.username)} alt={user.full_name || user.username} className="w-32 h-32 rounded-full border-4 border-white shadow-lg" />
                 {(user.stats?.rank ?? 0) <= 3 && (user.stats?.rank ?? 0) > 0 && <div className={`absolute -bottom-2 -right-2 w-12 h-12 rounded-full ${getMedalColor(user.stats.rank)} shadow-lg flex items-center justify-center border-2 border-white`}><Medal className="w-6 h-6" fill="currentColor" /></div>}
               </div>
               <div className="flex-1 pt-20">

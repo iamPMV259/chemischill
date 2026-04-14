@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { usersService } from '../../../services/users';
+import { getDefaultAvatarUrl } from '../../../lib/env';
 
 export default function EditProfilePage() {
   const navigate = useNavigate();
@@ -115,7 +116,7 @@ export default function EditProfilePage() {
           <div className="flex items-center gap-6 mb-8 pb-8 border-b">
             <div className="relative">
               <img
-                src={avatarPreview || 'https://api.dicebear.com/7.x/avataaars/svg?seed=default'}
+                src={avatarPreview || getDefaultAvatarUrl('default')}
                 alt="Avatar"
                 className="w-24 h-24 rounded-full border-4 border-gray-100"
               />

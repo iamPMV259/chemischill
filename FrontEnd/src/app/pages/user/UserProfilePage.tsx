@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { motion } from 'motion/react';
 import { usersService } from '../../../services/users';
 import { adaptUser, adaptCommunityQuestion } from '../../../lib/adapters';
+import { getDefaultAvatarUrl } from '../../../lib/env';
 
 export default function UserProfilePage() {
   const [user, setUser] = useState<any>(null);
@@ -44,7 +45,7 @@ export default function UserProfilePage() {
           <div className="h-32 bg-gradient-to-r from-blue-600 to-purple-600" />
           <div className="px-8 pb-8">
             <div className="flex items-end gap-6 -mt-16 mb-6">
-              <img src={user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`} alt={user.fullName || user.username} className="w-32 h-32 rounded-full border-4 border-white shadow-lg" />
+              <img src={user.avatarUrl || getDefaultAvatarUrl(user.username)} alt={user.fullName || user.username} className="w-32 h-32 rounded-full border-4 border-white shadow-lg" />
               <div className="flex-1 pt-20">
                 <div className="flex items-center justify-between mb-2">
                   <div>

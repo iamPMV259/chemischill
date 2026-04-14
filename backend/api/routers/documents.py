@@ -1,6 +1,7 @@
 import json
 import logging
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException, Header
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from api.dependencies import get_db, get_current_user, require_admin
 from services.documents import DocumentsService
@@ -43,6 +44,28 @@ async def get_document(doc_id: str, db: AsyncSession = Depends(get_db)):
         return await DocumentsService().get_document(db, doc_id)
     except BaseAppException as e:
         raise _map_exc(e)
+
+
+@router.get("/documents/{doc_id}/preview")
+async def preview_document(
+    doc_id: str,
+    range_header: str | None = Header(default=None, alias="Range"),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        preview = await DocumentsService().get_preview_file(db, doc_id, byte_range=range_header)
+    except BaseAppException as e:
+        raise _map_exc(e)
+
+    return Response(
+        content=preview["body"],
+        media_type=preview["content_type"],
+        headers={
+            **preview["headers"],
+            "Content-Length": str(preview["content_length"]),
+        },
+        status_code=206 if preview["partial"] else 200,
+    )
 
 
 @router.post("/documents/{doc_id}/view")

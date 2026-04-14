@@ -6,6 +6,7 @@ import { Badge } from '../../components/ui/badge';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../../components/ui/table';
 import { toast } from 'sonner';
 import { adminService } from '../../../services/admin';
+import { getDefaultAvatarUrl } from '../../../lib/env';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -65,7 +66,7 @@ export default function AdminUsersPage() {
           <TableBody>
             {users.map((user) => (
               <TableRow key={user.id}>
-                <TableCell><div className="flex items-center gap-3"><img src={user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`} alt={user.username} className="w-10 h-10 rounded-full" /><div><div className="font-medium">{user.full_name || user.username}</div><div className="text-xs text-gray-500">{user.email}</div></div></div></TableCell>
+                <TableCell><div className="flex items-center gap-3"><img src={user.avatar_url || getDefaultAvatarUrl(user.username)} alt={user.username} className="w-10 h-10 rounded-full" /><div><div className="font-medium">{user.full_name || user.username}</div><div className="text-xs text-gray-500">{user.email}</div></div></div></TableCell>
                 <TableCell>{user.phone || '-'}</TableCell>
                 <TableCell>{new Date(user.created_at).toLocaleDateString('vi-VN')}</TableCell>
                 <TableCell>{user.stats?.quizzes_completed ?? 0}</TableCell>

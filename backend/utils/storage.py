@@ -90,6 +90,18 @@ def create_r2_signed_url(file_path: str, expires_in: int = 300) -> str:
     )
 
 
+def get_r2_object(file_path: str, byte_range: str | None = None) -> dict:
+    client = get_r2_client()
+    cfg = Configs.storage()
+    if not cfg.r2_bucket:
+        raise ValidationError("Cloudflare R2 bucket is not configured")
+
+    params: dict = {"Bucket": cfg.r2_bucket, "Key": file_path}
+    if byte_range:
+        params["Range"] = byte_range
+    return client.get_object(**params)
+
+
 def create_r2_public_url(file_path: str) -> str:
     cfg = Configs.storage()
     if cfg.r2_public_base_url:

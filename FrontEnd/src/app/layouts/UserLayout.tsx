@@ -1,7 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { Search, BookOpen, Brain, MessageCircle, Trophy, User, Beaker, Globe, Info, LogOut, LayoutDashboard, KeyRound } from 'lucide-react';
+import { BookOpen, Brain, MessageCircle, User, Beaker, Globe, Info, LogOut, LayoutDashboard, KeyRound } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { motion } from 'motion/react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -66,6 +65,15 @@ export default function UserLayout() {
             </div>
 
             <div className="flex items-center gap-3">
+              {user?.role === 'ADMIN' && (
+                <Link to="/admin" className="hidden md:block">
+                  <Button variant="outline">
+                    <LayoutDashboard className="w-4 h-4 mr-2" />
+                    {t('nav.adminView')}
+                  </Button>
+                </Link>
+              )}
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="icon" className="rounded-full">

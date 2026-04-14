@@ -1,3 +1,5 @@
+import { getDefaultAvatarUrl } from './env';
+
 // Adapt API snake_case → frontend camelCase fields
 
 export function adaptDocument(d: any) {
@@ -14,6 +16,7 @@ export function adaptDocument(d: any) {
     downloads: d.downloads ?? 0,
     uploadDate: d.created_at,
     tags: d.tags?.map((t: any) => t.name) ?? [],
+    tagObjects: d.tags ?? [],
     category: d.category ?? null,
     fileUrl: d.file_url ?? '',
     previewUrl: d.preview_url ?? '',
@@ -52,7 +55,7 @@ export function adaptLeaderboardEntry(e: any, index: number) {
     id: e.user_id,
     rank: e.rank ?? index + 1,
     name: e.full_name || e.username,
-    avatar: e.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${e.username}`,
+    avatar: e.avatar_url || getDefaultAvatarUrl(e.username),
     points: e.total_score ?? 0,
     quizzesJoined: e.quizzes_completed ?? 0,
     questionsPosted: e.questions_posted ?? 0,
@@ -69,7 +72,7 @@ export function adaptCommunityQuestion(q: any) {
     description: q.content,
     status: q.status?.toLowerCase() ?? 'pending',
     userName: q.user?.username ?? '',
-    userAvatar: q.user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${q.user?.username}`,
+    userAvatar: q.user?.avatar_url || getDefaultAvatarUrl(q.user?.username || 'community-user'),
     userId: q.user?.id ?? '',
     images: q.images?.map((img: any) => img.image_url) ?? [],
     tags: q.tags?.map((t: any) => t.name) ?? [],
@@ -88,7 +91,7 @@ export function adaptAnswer(a: any) {
     isUpvoted: a.is_upvoted_by_me ?? a.user_upvoted ?? false,
     replyToAnswerId: a.reply_to_answer_id ?? null,
     userName: a.user?.username ?? '',
-    userAvatar: a.user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${a.user?.username}`,
+    userAvatar: a.user?.avatar_url || getDefaultAvatarUrl(a.user?.username || 'answer-user'),
     userId: a.user?.id ?? '',
     images: a.images?.map((img: any) => img.image_url) ?? [],
     postedDate: a.created_at,

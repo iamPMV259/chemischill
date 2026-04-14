@@ -11,6 +11,7 @@ import {
   LogOut,
   Globe,
   FolderTree,
+  House,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -45,7 +46,7 @@ export default function AdminLayout() {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 fixed h-full">
         <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
               <Beaker className="w-6 h-6 text-white" />
             </div>
@@ -53,10 +54,16 @@ export default function AdminLayout() {
               <h1 className="font-bold text-lg">{t('nav.appName')}</h1>
               <p className="text-xs text-gray-500">{t('admin.adminPanel')}</p>
             </div>
-          </div>
+          </Link>
         </div>
 
         <div className="px-4 py-3 border-b border-gray-200">
+          <Link to="/" className="mb-3 block">
+            <Button variant="outline" size="sm" className="w-full justify-start">
+              <House className="w-4 h-4 mr-2" />
+              {t('nav.userView')}
+            </Button>
+          </Link>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="w-full justify-start">

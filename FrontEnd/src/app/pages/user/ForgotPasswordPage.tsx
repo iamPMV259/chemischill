@@ -2,9 +2,10 @@ import { Link } from 'react-router';
 import { ArrowLeft, MessageCircleWarning, ShieldAlert } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { appEnv } from '../../../lib/env';
 
-const zaloUrl = import.meta.env.VITE_ADMIN_ZALO_URL || '';
-const zaloLabel = import.meta.env.VITE_ADMIN_ZALO_LABEL || 'Admin ChemisChill';
+const zaloUrl = appEnv.adminZaloUrl;
+const zaloLabel = appEnv.adminZaloLabel;
 
 export default function ForgotPasswordPage() {
   return (

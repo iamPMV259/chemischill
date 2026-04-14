@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from fastapi import UploadFile
+from botocore.exceptions import ClientError
 from database.models import (
     Document, DocumentTag, DocumentBookmark, DocumentDownload,
     Tag, FileTypeEnum, DocumentStatusEnum,
@@ -10,7 +11,7 @@ from database.models import (
 from hooks.error import NotFoundError, ForbiddenError, ValidationError, ConflictError
 from utils.storage import (
     upload_to_cloudinary, upload_to_r2,
-    delete_from_cloudinary, delete_from_r2, create_r2_signed_url,
+    delete_from_cloudinary, delete_from_r2, create_r2_signed_url, get_r2_object,
 )
 from .base_singleton import SingletonMeta
 
@@ -26,16 +27,16 @@ DOC_MIMES = set(MIME_TO_FILETYPE.keys())
 ALLOWED_MIMES = IMAGE_MIMES | DOC_MIMES
 
 
-def _doc_to_dict(doc: Document) -> dict:
+def _doc_to_dict(doc: Document, expose_file_url: bool = False) -> dict:
     preview_url = None
-    if doc.file_type in {FileTypeEnum.PDF, FileTypeEnum.IMAGE, FileTypeEnum.DOC, FileTypeEnum.DOCX}:
+    if doc.file_type in {FileTypeEnum.IMAGE, FileTypeEnum.DOC, FileTypeEnum.DOCX}:
         preview_url = doc.file_url
 
     return {
         "id": doc.id,
         "title": doc.title,
         "description": doc.description,
-        "file_url": doc.file_url,
+        "file_url": doc.file_url if expose_file_url else None,
         "thumbnail_url": doc.thumbnail_url,
         "file_type": doc.file_type.value,
         "file_size_bytes": doc.file_size_bytes,
@@ -146,6 +147,41 @@ class DocumentsService(metaclass=SingletonMeta):
             for r in related
         ]
         return out
+
+    async def get_preview_file(self, db: AsyncSession, doc_id: str, byte_range: str | None = None) -> dict:
+        result = await db.execute(
+            select(Document).where(
+                Document.id == doc_id,
+                Document.status == DocumentStatusEnum.PUBLIC,
+            )
+        )
+        doc = result.scalar_one_or_none()
+        if not doc:
+            raise NotFoundError("Document not found")
+        if doc.file_type != FileTypeEnum.PDF:
+            raise ValidationError("Preview is only supported for PDF documents")
+
+        try:
+            obj = get_r2_object(doc.file_key, byte_range=byte_range)
+        except ClientError:
+            raise NotFoundError("Preview file not found")
+
+        body = obj["Body"].read()
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": f'inline; filename="{doc.title}.pdf"',
+            "Cache-Control": "private, no-store, max-age=0",
+        }
+        if obj.get("ContentRange"):
+            headers["Content-Range"] = obj["ContentRange"]
+
+        return {
+            "body": body,
+            "content_type": obj.get("ContentType", "application/pdf"),
+            "content_length": obj.get("ContentLength", len(body)),
+            "headers": headers,
+            "partial": byte_range is not None and "ContentRange" in obj,
+        }
 
     async def increment_views(self, db: AsyncSession, doc_id: str) -> int:
         result = await db.execute(select(Document).where(Document.id == doc_id))
@@ -275,7 +311,7 @@ class DocumentsService(metaclass=SingletonMeta):
         if not doc:
             raise NotFoundError("Document not found")
 
-        out = _doc_to_dict(doc)
+        out = _doc_to_dict(doc, expose_file_url=True)
         out["uploaded_by"] = {
             "id": doc.uploaded_by.id,
             "username": doc.uploaded_by.username,
@@ -327,7 +363,7 @@ class DocumentsService(metaclass=SingletonMeta):
 
         await db.commit()
         await db.refresh(doc)
-        return _doc_to_dict(doc)
+        return _doc_to_dict(doc, expose_file_url=True)
 
     async def admin_toggle_download(self, db: AsyncSession, doc_id: str) -> dict:
         result = await db.execute(select(Document).where(Document.id == doc_id))
@@ -371,4 +407,4 @@ class DocumentsService(metaclass=SingletonMeta):
 
         docs_result = await db.execute(query.order_by(Document.created_at.desc()).offset(skip).limit(limit))
         docs = docs_result.scalars().all()
-        return [_doc_to_dict(d) for d in docs], total
+        return [_doc_to_dict(d, expose_file_url=True) for d in docs], total
