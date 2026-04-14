@@ -121,7 +121,7 @@ class UpdateTagRequest(BaseModel):
 class CreateCategoryRequest(BaseModel):
     name_vi: str
     name_en: str
-    slug: str
+    slug: str | None = None
     parent_id: str | None = None
 
 

@@ -1,44 +1,49 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ArrowLeft, Upload, X } from 'lucide-react';
+import { ArrowLeft, Upload } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Switch } from '../../components/ui/switch';
 import { toast } from 'sonner';
-import { tagsService } from '../../../services/tags';
 import { categoriesService } from '../../../services/categories';
 import { documentsService } from '../../../services/documents';
+
+type CategoryNode = {
+  id: string;
+  name_vi: string;
+  name_en: string;
+  slug: string;
+  parent_id?: string | null;
+  children?: CategoryNode[];
+};
+
+const flattenTree = (nodes: CategoryNode[], depth = 0): Array<CategoryNode & { depth: number }> =>
+  nodes.flatMap((node) => [{ ...node, depth }, ...flattenTree(node.children || [], depth + 1)]);
 
 export default function AdminUploadDocumentPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [featured, setFeatured] = useState(false);
   const [allowDownload, setAllowDownload] = useState(false);
   const [status, setStatus] = useState('PUBLIC');
   const [categoryId, setCategoryId] = useState('');
-  const [tags, setTags] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    tagsService.getTags().then((res) => setTags(res.data.data || [])).catch(() => {});
     categoriesService.getCategories().then((res) => setCategories(res.data.data || [])).catch(() => {});
   }, []);
 
-  const toggleTag = (tagId: string) => {
-    setSelectedTagIds((prev) => prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]);
-  };
+  const flattenedCategories = useMemo(() => flattenTree(categories), [categories]);
 
   const submit = async () => {
-    if (!title || !description || !file || selectedTagIds.length === 0) {
+    if (!title || !description || !file || !categoryId) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -48,12 +53,12 @@ export default function AdminUploadDocumentPage() {
       const formData = new FormData();
       formData.append('title', title);
       formData.append('description', description);
-      formData.append('tag_ids', JSON.stringify(selectedTagIds));
+      formData.append('tag_ids', JSON.stringify([]));
       formData.append('featured', String(featured));
       formData.append('allow_download', String(allowDownload));
       formData.append('status', status);
+      formData.append('category_id', categoryId);
       formData.append('file', file);
-      if (categoryId) formData.append('category_id', categoryId);
       if (thumbnail) formData.append('thumbnail', thumbnail);
 
       await documentsService.createDocument(formData);
@@ -98,38 +103,17 @@ export default function AdminUploadDocumentPage() {
             </div>
 
             <div>
-              <Label>Category</Label>
+              <Label>Document Tag *</Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger className="mt-2"><SelectValue placeholder="Select category" /></SelectTrigger>
+                <SelectTrigger className="mt-2"><SelectValue placeholder="Select a tag in the tree" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name_en || category.name_vi}</SelectItem>)}
+                  {flattenedCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {'— '.repeat(category.depth)}{category.name_vi || category.name_en}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div>
-              <Label>Tags *</Label>
-              <div className="mt-2 p-4 border border-gray-200 rounded-lg">
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {selectedTagIds.map((tagId) => {
-                    const tag = tags.find((item) => item.id === tagId);
-                    return tag ? (
-                      <Badge key={tagId} className="px-3 py-1">
-                        {tag.name}
-                        <button type="button" onClick={() => toggleTag(tagId)} className="ml-2 hover:text-red-200"><X className="w-3 h-3" /></button>
-                      </Badge>
-                    ) : null;
-                  })}
-                  {selectedTagIds.length === 0 && <p className="text-sm text-gray-500">No tags selected</p>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <Badge key={tag.id} variant={selectedTagIds.includes(tag.id) ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => toggleTag(tag.id)}>
-                      {tag.name}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -160,7 +144,10 @@ export default function AdminUploadDocumentPage() {
           </div>
 
           <div className="space-y-3">
-            <Button onClick={submit} className="w-full" disabled={submitting}>{submitting ? 'Publishing...' : 'Publish Document'}</Button>
+            <Button onClick={submit} className="w-full" disabled={submitting}>
+              <Upload className="w-4 h-4 mr-2" />
+              {submitting ? 'Publishing...' : 'Publish Document'}
+            </Button>
           </div>
         </div>
       </div>

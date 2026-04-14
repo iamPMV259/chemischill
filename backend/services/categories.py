@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
@@ -12,6 +14,26 @@ _CAT_OPTIONS = [selectinload(Category.children)]
 
 
 class CategoriesService(metaclass=SingletonMeta):
+    async def _generate_unique_slug(self, db: AsyncSession, name_en: str, preferred_slug: str | None = None) -> str:
+        base_slug = preferred_slug or name_en
+        normalized = unicodedata.normalize("NFKD", base_slug).encode("ascii", "ignore").decode("ascii").lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-") or "tag"
+
+        existing_slugs = set(
+            (
+                await db.execute(
+                    select(Category.slug).where(Category.slug.like(f"{slug}%"))
+                )
+            ).scalars().all()
+        )
+
+        if slug not in existing_slugs:
+            return slug
+
+        suffix = 2
+        while f"{slug}-{suffix}" in existing_slugs:
+            suffix += 1
+        return f"{slug}-{suffix}"
 
     async def get_categories(
         self, db: AsyncSession, parent_id: str | None = None, top_level: bool = True
@@ -27,9 +49,10 @@ class CategoriesService(metaclass=SingletonMeta):
         return result.scalars().all()  # type: ignore
 
     async def create_category(
-        self, db: AsyncSession, name_vi: str, name_en: str, slug: str, parent_id: str | None
+        self, db: AsyncSession, name_vi: str, name_en: str, slug: str | None, parent_id: str | None
     ) -> Category:
-        cat = Category(name_vi=name_vi, name_en=name_en, slug=slug, parent_id=parent_id)
+        resolved_slug = await self._generate_unique_slug(db, name_en, slug)
+        cat = Category(name_vi=name_vi, name_en=name_en, slug=resolved_slug, parent_id=parent_id)
         db.add(cat)
         await db.commit()
         result = await db.execute(

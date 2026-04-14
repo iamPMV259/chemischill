@@ -139,13 +139,13 @@ export default function DocumentDetailPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 mb-6">
-              {(doc.tagObjects || []).map((tag: any) => (
-                <Badge key={tag.id} variant="secondary">
-                  {language === 'vi' ? (tag.name_vi || tag.name) : (tag.name_en || tag.name)}
+            {doc.category && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                <Badge variant="secondary">
+                  {language === 'vi' ? (doc.category.name_vi || doc.category.name_en) : (doc.category.name_en || doc.category.name_vi)}
                 </Badge>
-              ))}
-            </div>
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-6 border-b pb-6 mb-6 text-sm text-gray-600">
               <div className="flex items-center gap-2">

@@ -1,11 +1,12 @@
 import os
 import logging
+from urllib.parse import quote
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from fastapi import UploadFile
 from botocore.exceptions import ClientError
 from database.models import (
-    Document, DocumentTag, DocumentBookmark, DocumentDownload,
+    Document, DocumentTag, DocumentBookmark, DocumentDownload, Category,
     Tag, FileTypeEnum, DocumentStatusEnum,
 )
 from hooks.error import NotFoundError, ForbiddenError, ValidationError, ConflictError
@@ -61,7 +62,35 @@ def _doc_to_dict(doc: Document, expose_file_url: bool = False) -> dict:
     }
 
 
+def _content_disposition_inline(filename: str) -> str:
+    ascii_filename = filename.encode("ascii", "ignore").decode("ascii") or "document.pdf"
+    ascii_filename = ascii_filename.replace('"', "")
+    encoded_filename = quote(filename, safe="")
+    return f"inline; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}"
+
+
 class DocumentsService(metaclass=SingletonMeta):
+
+    async def _get_category_scope_ids(self, db: AsyncSession, category_id: str) -> list[str]:
+        result = await db.execute(select(Category.id, Category.parent_id))
+        rows = result.all()
+
+        children_by_parent: dict[str | None, list[str]] = {}
+        known_ids = set()
+        for row in rows:
+            known_ids.add(row.id)
+            children_by_parent.setdefault(row.parent_id, []).append(row.id)
+
+        if category_id not in known_ids:
+            return []
+
+        scoped_ids: list[str] = []
+        stack = [category_id]
+        while stack:
+            current_id = stack.pop()
+            scoped_ids.append(current_id)
+            stack.extend(children_by_parent.get(current_id, []))
+        return scoped_ids
 
     async def list_documents(
         self,
@@ -84,7 +113,10 @@ class DocumentsService(metaclass=SingletonMeta):
                 Document.title.ilike(f"%{search}%") | Document.description.ilike(f"%{search}%")
             )
         if category_id:
-            query = query.where(Document.category_id == category_id)
+            category_scope_ids = await self._get_category_scope_ids(db, category_id)
+            if not category_scope_ids:
+                return [], 0
+            query = query.where(Document.category_id.in_(category_scope_ids))
         if featured is not None:
             query = query.where(Document.featured == featured)
         if tag_ids:
@@ -169,7 +201,7 @@ class DocumentsService(metaclass=SingletonMeta):
         body = obj["Body"].read()
         headers = {
             "Accept-Ranges": "bytes",
-            "Content-Disposition": f'inline; filename="{doc.title}.pdf"',
+            "Content-Disposition": _content_disposition_inline(f"{doc.title}.pdf"),
             "Cache-Control": "private, no-store, max-age=0",
         }
         if obj.get("ContentRange"):

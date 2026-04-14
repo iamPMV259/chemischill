@@ -99,7 +99,7 @@ export default function AdminDocumentsPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    {doc.tags.slice(0, 2).map((tag: string) => <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>)}
+                    {doc.category ? <Badge variant="secondary" className="text-xs">{doc.category.name_vi || doc.category.name_en}</Badge> : <span className="text-xs text-gray-400">-</span>}
                   </div>
                 </TableCell>
                 <TableCell>{doc.fileType}</TableCell>

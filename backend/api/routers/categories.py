@@ -14,11 +14,12 @@ def _map_exc(e: BaseAppException) -> HTTPException:
     return HTTPException(status_code=e.status_code, detail=e.message)
 
 
-def _cat_out(cat) -> dict:
+async def _cat_out(cat, db: AsyncSession) -> dict:
+    children = await CategoriesService().get_categories(db, parent_id=cat.id, top_level=False)
     return {
         "id": cat.id, "name_vi": cat.name_vi, "name_en": cat.name_en,
         "slug": cat.slug, "parent_id": cat.parent_id,
-        "children": [{"id": c.id, "name_vi": c.name_vi, "name_en": c.name_en, "slug": c.slug} for c in cat.children],
+        "children": [await _cat_out(c, db) for c in children],
     }
 
 
@@ -28,13 +29,13 @@ async def get_categories(parent_id: str | None = Query(default=None), db: AsyncS
         cats = await CategoriesService().get_categories(db, top_level=True)
     else:
         cats = await CategoriesService().get_categories(db, parent_id=parent_id, top_level=False)
-    return {"data": [_cat_out(c) for c in cats]}
+    return {"data": [await _cat_out(c, db) for c in cats]}
 
 
 @router.post("/admin/categories", status_code=201)
 async def create_category(body: CreateCategoryRequest, db: AsyncSession = Depends(get_db), _=Depends(require_admin)):
     cat = await CategoriesService().create_category(db, body.name_vi, body.name_en, body.slug, body.parent_id)
-    return _cat_out(cat)
+    return await _cat_out(cat, db)
 
 
 @router.patch("/admin/categories/{cat_id}")
@@ -49,7 +50,7 @@ async def update_category(
         cat = await CategoriesService().update_category(db, cat_id, data)
     except BaseAppException as e:
         raise _map_exc(e)
-    return _cat_out(cat)
+    return await _cat_out(cat, db)
 
 
 @router.delete("/admin/categories/{cat_id}")

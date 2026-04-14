@@ -10,7 +10,6 @@ import {
   Beaker,
   LogOut,
   Globe,
-  FolderTree,
   House,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -37,7 +36,6 @@ export default function AdminLayout() {
     { path: '/admin/quizzes', label: t('admin.quizzes'), icon: Brain },
     { path: '/admin/questions', label: t('admin.questionApproval'), icon: MessageSquare },
     { path: '/admin/tags', label: t('admin.tags'), icon: Tags },
-    { path: '/admin/categories', label: t('admin.categories'), icon: FolderTree },
     { path: '/admin/users', label: t('admin.users'), icon: Users },
   ];
 

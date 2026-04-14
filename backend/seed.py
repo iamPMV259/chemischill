@@ -24,51 +24,63 @@ async def seed():
         try:
             # ── Tags ──────────────────────────────────────────────────────────────
             tags_data = [
-                ("Organic Chemistry", TagCategoryEnum.TOPIC),
-                ("Electrochemistry", TagCategoryEnum.TOPIC),
-                ("Thermochemistry", TagCategoryEnum.TOPIC),
-                ("Inorganic Chemistry", TagCategoryEnum.TOPIC),
-                ("Analytical Chemistry", TagCategoryEnum.TOPIC),
-                ("Grade 10", TagCategoryEnum.GRADE),
-                ("Grade 11", TagCategoryEnum.GRADE),
-                ("Grade 12", TagCategoryEnum.GRADE),
-                ("Easy", TagCategoryEnum.DIFFICULTY),
-                ("Advanced Exercises", TagCategoryEnum.DIFFICULTY),
+                ("Organic Chemistry", "Hóa hữu cơ", TagCategoryEnum.TOPIC),
+                ("Electrochemistry", "Điện hóa học", TagCategoryEnum.TOPIC),
+                ("Thermochemistry", "Nhiệt hóa học", TagCategoryEnum.TOPIC),
+                ("Inorganic Chemistry", "Hóa vô cơ", TagCategoryEnum.TOPIC),
+                ("Analytical Chemistry", "Hóa phân tích", TagCategoryEnum.TOPIC),
+                ("Grade 10", "Lớp 10", TagCategoryEnum.GRADE),
+                ("Grade 11", "Lớp 11", TagCategoryEnum.GRADE),
+                ("Grade 12", "Lớp 12", TagCategoryEnum.GRADE),
+                ("Easy", "Dễ", TagCategoryEnum.DIFFICULTY),
+                ("Advanced Exercises", "Bài tập nâng cao", TagCategoryEnum.DIFFICULTY),
             ]
 
             created_tags = 0
-            for name, category in tags_data:
-                result = await db.execute(select(Tag).where(Tag.name == name))
-                if not result.scalar_one_or_none():
-                    db.add(Tag(name=name, category=category))
+            updated_tags = 0
+            for name_en, name_vi, category in tags_data:
+                result = await db.execute(select(Tag).where(Tag.name == name_en))
+                existing_tag = result.scalar_one_or_none()
+                if not existing_tag:
+                    db.add(Tag(name=name_en, name_vi=name_vi, category=category))
                     created_tags += 1
+                else:
+                    needs_update = (
+                        existing_tag.name_vi in (None, "", existing_tag.name)
+                        or existing_tag.category != category
+                    )
+                    if needs_update:
+                        existing_tag.name_vi = name_vi
+                        existing_tag.category = category
+                        updated_tags += 1
             await db.flush()
-            print(f"  Tags: {created_tags} created")
+            print(f"  Tags: {created_tags} created, {updated_tags} updated")
 
-            # ── Categories ────────────────────────────────────────────────────────
-            organic_result = await db.execute(select(Category).where(Category.slug == "organic"))
-            organic = organic_result.scalar_one_or_none()
-            if not organic:
-                organic = Category(name_vi="Hóa Hữu Cơ", name_en="Organic Chemistry", slug="organic")
-                db.add(organic)
-                await db.flush()
+            # ── Document tag tree (Category) ────────────────────────────────────
+            async def ensure_category(slug: str, name_vi: str, name_en: str, parent_id: str | None = None):
+                result = await db.execute(select(Category).where(Category.slug == slug))
+                category = result.scalar_one_or_none()
+                if not category:
+                    category = Category(name_vi=name_vi, name_en=name_en, slug=slug, parent_id=parent_id)
+                    db.add(category)
+                    await db.flush()
+                else:
+                    category.name_vi = name_vi
+                    category.name_en = name_en
+                    category.parent_id = parent_id
+                return category
 
-            inorganic_result = await db.execute(select(Category).where(Category.slug == "inorganic"))
-            if not inorganic_result.scalar_one_or_none():
-                db.add(Category(name_vi="Hóa Vô Cơ", name_en="Inorganic Chemistry", slug="inorganic"))
+            general_root = await ensure_category("general-chemistry", "Hóa thường", "General Chemistry")
+            advanced_root = await ensure_category("specialized-chemistry", "Hóa chuyên", "Specialized Chemistry")
 
-            orgreact_result = await db.execute(select(Category).where(Category.slug == "organic-reactions"))
-            if not orgreact_result.scalar_one_or_none():
-                db.add(Category(
-                    name_vi="Phản Ứng Hữu Cơ",
-                    name_en="Organic Reactions",
-                    slug="organic-reactions",
-                    parent_id=organic.id,
-                ))
+            for grade in range(6, 13):
+                await ensure_category(f"grade-{grade}", f"Lớp {grade}", f"Grade {grade}", general_root.id)
 
-            analytical_result = await db.execute(select(Category).where(Category.slug == "analytical"))
-            if not analytical_result.scalar_one_or_none():
-                db.add(Category(name_vi="Hóa Phân Tích", name_en="Analytical Chemistry", slug="analytical"))
+            inorganic = await ensure_category("inorganic", "Hóa vô cơ", "Inorganic Chemistry", advanced_root.id)
+            organic = await ensure_category("organic", "Hóa hữu cơ", "Organic Chemistry", advanced_root.id)
+
+            await ensure_category("organic-reactions", "Phản ứng hữu cơ", "Organic Reactions", organic.id)
+            await ensure_category("analytical", "Hóa phân tích", "Analytical Chemistry", inorganic.id)
 
             print("  Categories: seeded")
 

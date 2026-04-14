@@ -1,18 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Switch } from '../../components/ui/switch';
 import { toast } from 'sonner';
-import { tagsService } from '../../../services/tags';
 import { categoriesService } from '../../../services/categories';
 import { documentsService } from '../../../services/documents';
 import { adaptDocument } from '../../../lib/adapters';
+
+type CategoryNode = {
+  id: string;
+  name_vi: string;
+  name_en: string;
+  slug: string;
+  parent_id?: string | null;
+  children?: CategoryNode[];
+};
+
+const flattenTree = (nodes: CategoryNode[], depth = 0): Array<CategoryNode & { depth: number }> =>
+  nodes.flatMap((node) => [{ ...node, depth }, ...flattenTree(node.children || [], depth + 1)]);
 
 export default function AdminEditDocumentPage() {
   const { id } = useParams();
@@ -20,13 +30,11 @@ export default function AdminEditDocumentPage() {
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [featured, setFeatured] = useState(false);
   const [allowDownload, setAllowDownload] = useState(false);
   const [status, setStatus] = useState('PUBLIC');
   const [categoryId, setCategoryId] = useState('');
-  const [tags, setTags] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<CategoryNode[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [doc, setDoc] = useState<any>(null);
@@ -35,32 +43,27 @@ export default function AdminEditDocumentPage() {
     if (!id) return;
     Promise.all([
       documentsService.getAdminDocument(id),
-      tagsService.getTags(),
       categoriesService.getCategories(),
     ])
-      .then(([docRes, tagsRes, categoriesRes]) => {
+      .then(([docRes, categoriesRes]) => {
         const adapted = adaptDocument(docRes.data);
         setDoc(adapted);
         setTitle(adapted.title);
         setDescription(adapted.description);
-        setSelectedTagIds((docRes.data.tags || []).map((tag: any) => tag.id));
         setFeatured(Boolean(docRes.data.featured));
         setAllowDownload(Boolean(docRes.data.allow_download));
         setStatus(docRes.data.status || 'PUBLIC');
         setCategoryId(docRes.data.category?.id || '');
-        setTags(tagsRes.data.data || []);
         setCategories(categoriesRes.data.data || []);
       })
       .catch(() => setDoc(null))
       .finally(() => setLoading(false));
   }, [id]);
 
-  const toggleTag = (tagId: string) => {
-    setSelectedTagIds((prev) => prev.includes(tagId) ? prev.filter((item) => item !== tagId) : [...prev, tagId]);
-  };
+  const flattenedCategories = useMemo(() => flattenTree(categories), [categories]);
 
   const handleSave = async () => {
-    if (!id || !title || !description || selectedTagIds.length === 0) {
+    if (!id || !title || !description || !categoryId) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -68,11 +71,11 @@ export default function AdminEditDocumentPage() {
       const formData = new FormData();
       formData.append('title', title);
       formData.append('description', description);
-      formData.append('tag_ids', JSON.stringify(selectedTagIds));
+      formData.append('tag_ids', JSON.stringify([]));
       formData.append('featured', String(featured));
       formData.append('allow_download', String(allowDownload));
       formData.append('status', status);
-      if (categoryId) formData.append('category_id', categoryId);
+      formData.append('category_id', categoryId);
       if (file) formData.append('file', file);
       if (thumbnail) formData.append('thumbnail', thumbnail);
       await documentsService.updateDocument(id, formData);
@@ -126,11 +129,15 @@ export default function AdminEditDocumentPage() {
             </div>
 
             <div>
-              <Label>Category</Label>
+              <Label>Document Tag *</Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger className="mt-2"><SelectValue placeholder="Select category" /></SelectTrigger>
+                <SelectTrigger className="mt-2"><SelectValue placeholder="Select a tag in the tree" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name_en || category.name_vi}</SelectItem>)}
+                  {flattenedCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {'— '.repeat(category.depth)}{category.name_vi || category.name_en}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -138,25 +145,6 @@ export default function AdminEditDocumentPage() {
             <div>
               <Label>Replace File</Label>
               <Input type="file" className="mt-2" accept=".pdf,.doc,.docx,image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-            </div>
-
-            <div>
-              <Label>Tags *</Label>
-              <div className="mt-2 p-4 border border-gray-200 rounded-lg">
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {selectedTagIds.map((tagId) => {
-                    const tag = tags.find((item) => item.id === tagId);
-                    return tag ? <Badge key={tagId}>{tag.name}</Badge> : null;
-                  })}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <Badge key={tag.id} variant={selectedTagIds.includes(tag.id) ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => toggleTag(tag.id)}>
-                      {tag.name}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         </div>
